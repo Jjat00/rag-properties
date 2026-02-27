@@ -8,7 +8,7 @@ Busca propiedades en lenguaje natural (ej: "casa de 4 habitaciones con 2 baños 
 - **Backend**: Python 3.12 + FastAPI
 - **Package manager**: uv
 - **Vector DB**: Qdrant (Docker local)
-- **Embeddings**: OpenAI (small/large) y Gemini (multi-modelo, intercambiables)
+- **Embeddings**: OpenAI text-embedding-3 (small/large) y Gemini gemini-embedding-001 (multi-modelo, intercambiables)
 - **Query parsing**: Gemini Flash / GPT-4o-mini con structured output
 
 ## Cómo funciona
@@ -41,11 +41,14 @@ rag-properties/
 │   ├── embeddings/
 │   │   ├── base.py             # Clase abstracta EmbeddingProvider
 │   │   ├── openai_provider.py  # OpenAI text-embedding-3-small/large
-│   │   ├── gemini_provider.py  # Gemini text-embedding-004
+│   │   ├── gemini_provider.py  # Gemini gemini-embedding-001
 │   │   └── registry.py         # Registry con cache de providers
 │   ├── vectorstore/
 │   │   └── qdrant_manager.py   # Gestión de colecciones e indexes
-│   ├── ingestion/              # (Fase 2)
+│   ├── ingestion/
+│   │   ├── location_normalizer.py  # Diccionario de aliases MX
+│   │   ├── excel_loader.py     # Leer Excel → lista de Property
+│   │   └── indexer.py          # Generar embeddings e indexar en Qdrant
 │   └── search/                 # (Fase 3)
 ├── data/                       # Excel de propiedades
 ├── frontend/                   # (Fase 4)
@@ -95,6 +98,7 @@ uvicorn main:app --reload
 | GET | `/health` | Health check del servidor |
 | GET | `/health/qdrant` | Estado de las 3 colecciones en Qdrant |
 | GET | `/models` | Lista de modelos de embedding soportados |
+| POST | `/ingest` | Indexar propiedades del Excel en Qdrant (`?model=openai-small&all_models=false`) |
 | GET | `/docs` | Swagger UI |
 
 ## Modelos de embedding soportados
@@ -103,7 +107,25 @@ uvicorn main:app --reload
 |--------|------------|------------------|-------|
 | `openai-small` | 1536 | `properties_openai_small` | $0.02/M tokens |
 | `openai-large` | 3072 | `properties_openai_large` | $0.13/M tokens |
-| `gemini` | 768 | `properties_gemini` | Gratis (con límite) |
+| `gemini` | 3072 | `properties_gemini` | $0.15/M tokens |
+
+## Indexar propiedades
+
+Con el backend corriendo:
+
+```bash
+# Indexar con un modelo específico
+curl -X POST "http://localhost:8000/ingest?model=openai-small"
+
+# Indexar con Gemini
+curl -X POST "http://localhost:8000/ingest?model=gemini"
+
+# Indexar en las 3 colecciones
+curl -X POST "http://localhost:8000/ingest?all_models=true"
+
+# Verificar
+curl http://localhost:8000/health/qdrant
+```
 
 ## Decisiones clave
 
@@ -120,7 +142,7 @@ Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
 ## Fases del proyecto
 
 - [x] **Fase 1** — Backend base: proyecto uv, modelos, embeddings multi-modelo, Qdrant manager, FastAPI
-- [ ] **Fase 2** — Ingesta: leer Excel, canonicalizar ubicaciones, generar embeddings, indexar en Qdrant
+- [x] **Fase 2** — Ingesta: Excel loader, location normalizer, indexer, endpoint POST /ingest (8,803 propiedades)
 - [ ] **Fase 3** — Búsqueda: normalización + query parsing + búsqueda semántica con filtros
 - [ ] **Fase 4** — Frontend: playground web para probar búsquedas
 - [ ] **Fase 5** — Mejoras: sparse BM25 + RRF, reranking, paginación, quantization

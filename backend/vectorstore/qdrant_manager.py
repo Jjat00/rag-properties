@@ -1,15 +1,28 @@
+import logging
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
     PayloadSchemaType,
+    PointStruct,
+    TextIndexParams,
+    TokenizerType,
     VectorParams,
 )
 
 from config import COLLECTION_NAMES, EMBEDDING_DIMENSIONS, EmbeddingModel
 
-PAYLOAD_INDEXES: dict[str, PayloadSchemaType] = {
+logger = logging.getLogger(__name__)
+
+PAYLOAD_INDEXES: dict[str, PayloadSchemaType | TextIndexParams] = {
     "city": PayloadSchemaType.KEYWORD,
     "state": PayloadSchemaType.KEYWORD,
+    "neighborhood": TextIndexParams(
+        type="text",
+        tokenizer=TokenizerType.MULTILINGUAL,
+        min_token_len=2,
+        max_token_len=20,
+    ),
     "property_type": PayloadSchemaType.KEYWORD,
     "operation": PayloadSchemaType.KEYWORD,
     "bedrooms": PayloadSchemaType.INTEGER,
@@ -18,6 +31,8 @@ PAYLOAD_INDEXES: dict[str, PayloadSchemaType] = {
     "surface": PayloadSchemaType.FLOAT,
     "condition": PayloadSchemaType.KEYWORD,
 }
+
+_UPSERT_BATCH_SIZE = 100
 
 
 class QdrantManager:
@@ -67,6 +82,22 @@ class QdrantManager:
                 "name": collection_name,
                 "status": "not_found",
             }
+
+    async def upsert_points(
+        self, collection_name: str, points: list[PointStruct]
+    ) -> int:
+        """Upsert points in batches. Returns total points upserted."""
+        total = 0
+        for i in range(0, len(points), _UPSERT_BATCH_SIZE):
+            batch = points[i : i + _UPSERT_BATCH_SIZE]
+            await self._client.upsert(
+                collection_name=collection_name,
+                points=batch,
+            )
+            total += len(batch)
+            if total % 1000 == 0 or total == len(points):
+                logger.info("Upserted %d / %d points", total, len(points))
+        return total
 
     async def close(self) -> None:
         await self._client.close()

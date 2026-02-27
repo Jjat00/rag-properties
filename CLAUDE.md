@@ -17,7 +17,7 @@ y el sistema retorna las propiedades más relevantes del catálogo.
 - **Lenguaje**: Python (backend)
 - **Package manager**: `uv` — SIEMPRE usar uv, nunca pip directamente
 - **Vector DB**: Qdrant (local con Docker, imagen `qdrant/qdrant:latest`)
-- **Embeddings**: OpenAI text-embedding-3-small/large y Gemini text-embedding-004 (multi-modelo, intercambiables)
+- **Embeddings**: OpenAI text-embedding-3-small/large y Gemini gemini-embedding-001 (multi-modelo, intercambiables)
 - **Query parsing**: Gemini Flash o GPT-4o-mini con structured output para extraer filtros
 - **LLM credits**: Gemini y OpenAI (NO Anthropic). Nunca usar APIs de Anthropic.
 - **Self-hosted**: NADA self-hosted. Solo APIs y servicios managed.
@@ -76,11 +76,12 @@ rag-properties/
 │   ├── embeddings/
 │   │   ├── base.py             # Clase abstracta EmbeddingProvider
 │   │   ├── openai_provider.py  # OpenAI text-embedding-3-small/large
-│   │   ├── gemini_provider.py  # Gemini text-embedding-004
+│   │   ├── gemini_provider.py  # Gemini gemini-embedding-001
 │   │   └── registry.py         # Registry con cache de providers
 │   ├── vectorstore/
 │   │   └── qdrant_manager.py   # Gestión de colecciones e indexes
 │   ├── ingestion/
+│   │   ├── location_normalizer.py  # Diccionario estático de aliases MX
 │   │   ├── excel_loader.py     # Leer y parsear Excel
 │   │   └── indexer.py          # Generar embeddings e indexar en Qdrant
 │   └── search/
@@ -121,7 +122,8 @@ Columnas del Excel fuente:
 | `Attributes: Condition` | Condición (Bueno, Excelente, etc.) |
 | `Address: Name` | Nombre de referencia de la dirección |
 
-**Volumen**: ~8,000 propiedades iniciales, escalable a 100K+.
+**Volumen**: 8,808 filas en Excel (8,803 únicas tras deduplicar 5 IDs repetidos), escalable a 100K+.
+**IDs**: Strings hexadecimales (ej: `68f2e999d0e6dd4c13fe9da9`), no integers.
 
 ---
 
@@ -211,7 +213,7 @@ LangGraph añade complejidad sin beneficio para este caso. Un endpoint FastAPI s
 |--------|------------|-------|----------|
 | `text-embedding-3-small` | 1536d | $0.02/M tokens | OpenAI |
 | `text-embedding-3-large` | 3072d | $0.13/M tokens | OpenAI |
-| `text-embedding-004` | 768d | gratis (con límite) | Gemini |
+| `gemini-embedding-001` | 3072d | $0.15/M tokens | Gemini |
 
 - Todos via API, **nada self-hosted**
 - Cosine similarity para todos
@@ -278,7 +280,7 @@ Si se necesita en el futuro: Cohere Rerank 3.5 o BGE-reranker-v2-m3.
 ## Fases del proyecto
 
 1. **Fase 1 — Backend base** ✅: Proyecto uv, FastAPI, modelos Pydantic, embedding providers, Qdrant manager
-2. **Fase 2 — Ingesta**: Leer Excel, canonicalizar ubicaciones, generar embeddings, indexar en Qdrant
+2. **Fase 2 — Ingesta** ✅: Excel loader, location normalizer, indexer, endpoint POST /ingest
 3. **Fase 3 — Búsqueda**: Location normalizer + LLM query parsing + búsqueda vectorial con filtros
 4. **Fase 4 — Frontend**: Playground web para probar búsquedas
 5. **Fase 5 — Mejoras**: Sparse vectors BM25 + RRF fusion, reranking, paginación
@@ -306,4 +308,12 @@ uv add <paquete>
 
 # Correr backend
 uvicorn main:app --reload
+
+# Indexar propiedades (con el backend corriendo)
+curl -X POST "http://localhost:8000/ingest?model=openai-small"
+curl -X POST "http://localhost:8000/ingest?model=gemini"
+curl -X POST "http://localhost:8000/ingest?all_models=true"
+
+# Verificar indexación
+curl http://localhost:8000/health/qdrant
 ```

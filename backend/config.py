@@ -13,7 +13,7 @@ class EmbeddingModel(str, Enum):
 EMBEDDING_DIMENSIONS: dict[EmbeddingModel, int] = {
     EmbeddingModel.OPENAI_SMALL: 1536,
     EmbeddingModel.OPENAI_LARGE: 3072,
-    EmbeddingModel.GEMINI: 768,
+    EmbeddingModel.GEMINI: 3072,
 }
 
 COLLECTION_NAMES: dict[EmbeddingModel, str] = {

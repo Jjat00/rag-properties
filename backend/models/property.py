@@ -54,7 +54,7 @@ def _normalize_number(value: object) -> float | None:
 
 
 class Property(BaseModel):
-    id: int | None = None
+    id: str | None = None
     agent_first_name: str | None = None
     agent_last_name: str | None = None
     agent_company: str | None = None
@@ -76,6 +76,13 @@ class Property(BaseModel):
     condition: str | None = None
     address_name: str | None = None
 
+    @field_validator("agent_phone", "id", "internal_id", mode="before")
+    @classmethod
+    def coerce_to_str(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        return str(v).strip() or None
+
     @field_validator("price", "surface", "roofed_surface", mode="before")
     @classmethod
     def normalize_numeric(cls, v: object) -> float | None:
@@ -92,42 +99,33 @@ class Property(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def embedding_text(self) -> str:
+        """Build text for embedding. Title first (highest semantic value),
+        then structured context. Price excluded (better as exact filter).
+        Address excluded (noise). Neighborhood included (descriptive search).
+        """
         parts: list[str] = []
-
-        type_op = f"{self.property_type or 'Propiedad'} en {self.operation or 'venta'}"
-        location = ", ".join(filter(None, [self.city, self.state]))
-        if location:
-            type_op += f" en {location}"
-        parts.append(type_op + ".")
 
         if self.title:
             parts.append(self.title + ".")
+
+        type_op = f"{self.property_type or 'Propiedad'} en {self.operation or 'venta'}"
+        location = ", ".join(filter(None, [self.neighborhood, self.city, self.state]))
+        if location:
+            type_op += f" en {location}"
+        parts.append(type_op + ".")
 
         attrs: list[str] = []
         if self.bedrooms is not None:
             attrs.append(f"{int(self.bedrooms)} recámaras")
         if self.bathrooms is not None:
             attrs.append(f"{int(self.bathrooms)} baños")
+        if self.surface is not None:
+            attrs.append(f"{self.surface}m²")
         if attrs:
             parts.append(", ".join(attrs) + ".")
 
-        surfaces: list[str] = []
-        if self.surface is not None:
-            surfaces.append(f"{self.surface}m²")
-        if self.roofed_surface is not None:
-            surfaces.append(f"({self.roofed_surface}m² techados)")
-        if surfaces:
-            parts.append("Superficie: " + " ".join(surfaces) + ".")
-
         if self.condition:
             parts.append(f"Condición: {self.condition}.")
-
-        if self.neighborhood:
-            parts.append(f"Colonia: {self.neighborhood}.")
-
-        if self.price is not None:
-            currency = self.currency or "MXN"
-            parts.append(f"Precio: {currency} {self.price:,.0f}.")
 
         return " ".join(parts)
 

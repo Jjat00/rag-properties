@@ -35,7 +35,7 @@ Aplica para 8K y 100K+. Named vectors solo se justificarían para modalidades di
 3 colecciones para A/B testing:
 - `properties_openai_small` (1536d)
 - `properties_openai_large` (3072d)
-- `properties_gemini` (768d)
+- `properties_gemini` (3072d)
 
 Después de determinar ganador → consolidar a 1 colección.
 
@@ -99,14 +99,17 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 - [x] QdrantManager con colecciones e indexes
 - [x] FastAPI app con /health, /health/qdrant, /models
 
-### Fase 2 — Ingesta
-- [ ] Auditar Excel: `value_counts()` de city, state, neighborhood, type, operation
-- [ ] `location_normalizer.py`: diccionario estático de aliases MX (basado en auditoría)
-- [ ] `excel_loader.py`: leer Excel → lista de Property (con canonicalización)
-- [ ] `indexer.py`: generar embeddings en batches → upsert en Qdrant
-- [ ] Actualizar `neighborhood` index de KEYWORD a TEXT en qdrant_manager
-- [ ] Endpoint POST `/ingest` o script CLI para disparar ingesta
-- [ ] Verificar: /health/qdrant muestra points_count > 0
+### Fase 2 — Ingesta ✅
+- [x] Auditar Excel: 8808 filas, 8803 IDs únicos, states inconsistentes identificados
+- [x] `ingestion/location_normalizer.py`: STATE_CANONICAL (ingesta) + STATE_ALIASES (query-time)
+- [x] `ingestion/excel_loader.py`: leer Excel → lista de Property (con canonicalización, NaN→None, dedup)
+- [x] `ingestion/indexer.py`: generar embeddings en batches → upsert en Qdrant (UUID5 determinísticos)
+- [x] `neighborhood` index de KEYWORD a TEXT (multilingual tokenizer) en qdrant_manager
+- [x] `upsert_points()` con batches de 100 en qdrant_manager
+- [x] Endpoint POST `/ingest` con params `model` y `all_models`
+- [x] Fix `property.py`: id: str (no int), coerce_to_str para phone/id, embedding_text sin precio
+- [x] Fix `gemini_provider.py`: sync→asyncio.to_thread(), modelo actualizado a gemini-embedding-001 (3072d)
+- [x] Verificado: 8803 propiedades cargadas, states canonicalizados correctamente
 
 ### Fase 3 — Búsqueda
 - [ ] `query_parser.py`: Gemini Flash / GPT-4o-mini con structured output → ParsedQuery
