@@ -1,1 +1,9 @@
 .mcp.json
+.env
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+qdrant_storage/
+data/*.xlsx
