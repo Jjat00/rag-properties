@@ -113,6 +113,12 @@ Variantes:
 9. condition puede ser: "Bueno", "Excelente", "Regular", "Nuevo".
 10. Si dice "más o menos X" / "aproximadamente X" / "como X" / "alrededor de X", \
 crea un rango de ±5% (min=X*0.95, max=X*1.05).
+10b. Si el usuario menciona un precio puntual SIN calificador de dirección \
+("de 30M", "30 millones", "a 5 mdp", "en 2M"), trátalo como aproximado ±5%: \
+min_price=X*0.95, max_price=X*1.05. \
+Solo usa min/max unilateral cuando el usuario usa explícitamente \
+"desde" / "más de" / "mínimo" (→ solo min) o \
+"hasta" / "menos de" / "máximo" / "no más de" (→ solo max).
 11. Para property_type usa el nombre genérico: "Terreno", "Casa", "Departamento", etc. \
 El sistema expande automáticamente a subtipos (Terreno → Terreno residencial, comercial, etc.).
 12. Maneja typos comunes: "millnes" → "millones", "depatamento" → "Departamento", etc.
