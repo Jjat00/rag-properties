@@ -98,8 +98,39 @@ uvicorn main:app --reload
 | GET | `/health` | Health check del servidor |
 | GET | `/health/qdrant` | Estado de las 3 colecciones en Qdrant |
 | GET | `/models` | Lista de modelos de embedding soportados |
-| POST | `/ingest` | Indexar propiedades del Excel en Qdrant (`?model=openai-small&all_models=false`) |
-| GET | `/docs` | Swagger UI |
+| POST | `/ingest` | Indexar propiedades del Excel en Qdrant |
+| GET | `/docs` | Swagger UI (documentación interactiva) |
+
+### POST `/ingest`
+
+Carga las propiedades del Excel, genera embeddings y las indexa en Qdrant.
+
+**Parámetros query:**
+
+| Parámetro | Tipo | Default | Descripción |
+|-----------|------|---------|-------------|
+| `model` | `openai-small` \| `openai-large` \| `gemini` | `openai-small` | Modelo de embedding a usar (ignorado si `all_models=true`) |
+| `all_models` | `bool` | `false` | Si `true`, indexa en las 3 colecciones |
+
+**Respuesta (un modelo):**
+```json
+{
+  "model": "openai-small",
+  "collection": "properties_openai_small",
+  "points_indexed": 8803
+}
+```
+
+**Respuesta (all_models=true):**
+```json
+{
+  "results": [
+    {"model": "openai-small", "collection": "properties_openai_small", "points_indexed": 8803},
+    {"model": "openai-large", "collection": "properties_openai_large", "points_indexed": 8803},
+    {"model": "gemini", "collection": "properties_gemini", "points_indexed": 8803}
+  ]
+}
+```
 
 ## Modelos de embedding soportados
 
