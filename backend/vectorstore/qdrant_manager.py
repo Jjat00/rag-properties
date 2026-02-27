@@ -30,6 +30,7 @@ PAYLOAD_INDEXES: dict[str, PayloadSchemaType | TextIndexParams] = {
     "price": PayloadSchemaType.FLOAT,
     "surface": PayloadSchemaType.FLOAT,
     "condition": PayloadSchemaType.KEYWORD,
+    "currency": PayloadSchemaType.KEYWORD,
 }
 
 _UPSERT_BATCH_SIZE = 100
