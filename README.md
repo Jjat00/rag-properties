@@ -9,7 +9,7 @@ Busca propiedades en lenguaje natural (ej: "casa de 4 habitaciones con 2 baños 
 - **Package manager**: uv
 - **Vector DB**: Qdrant (local Docker en desarrollo, Qdrant Cloud en producción)
 - **Embeddings**: OpenAI text-embedding-3 (small/large) y Gemini gemini-embedding-001 (multi-modelo, intercambiables)
-- **Query parsing**: Gemini Flash con structured output
+- **Query parsing**: Gemini 3 Flash (preview) con structured output
 - **Frontend**: React 19 + Vite + Shadcn/ui + Tailwind v4
 
 ## Cómo funciona
@@ -19,7 +19,7 @@ Query: "casa amplia con jardín en zona tranquila de Mérida, 3 recámaras"
     ↓
 1. Normalización: "Merida" → "Mérida" (diccionario estático)
     ↓
-2. LLM Parser (Gemini Flash): extrae city="Mérida", type="Casa", bedrooms=3
+2. LLM Parser (Gemini 3 Flash): extrae city="Mérida", type="Casa", bedrooms=3
     ↓
 3. Qdrant pre-filtra: ~200 casas de 3 recámaras en Mérida
     ↓
@@ -112,7 +112,7 @@ curl -X POST "http://localhost:8000/ingest?model=gemini"
 # .env (basado en .env.example)
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=AI...
-DEFAULT_EMBEDDING_MODEL=gemini   # openai-small | openai-large | gemini
+DEFAULT_EMBEDDING_MODEL=openai-small   # openai-small | openai-large | gemini
 
 # Qdrant local (desarrollo)
 QDRANT_HOST=localhost
@@ -177,7 +177,7 @@ Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
 
 - [x] **Fase 1** — Backend base: proyecto uv, modelos, embeddings multi-modelo, Qdrant manager, FastAPI
 - [x] **Fase 2** — Ingesta: Excel loader, location normalizer, indexer, endpoint POST /ingest (8,803 propiedades)
-- [x] **Fase 3** — Búsqueda: query parsing con Gemini Flash + búsqueda semántica con filtros, endpoint POST /search
+- [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash + búsqueda semántica con filtros, endpoint POST /search
 - [x] **Fase 4** — Frontend: playground React 19 + Vite + Shadcn/ui con gráfica de similitud interactiva
 - [ ] **Fase 5** — Mejoras: sparse BM25 + RRF, reranking, paginación, quantization
-- [ ] **Fase 6** — Deploy: Railway (backend) + Vercel (frontend) + Qdrant Cloud
+- [x] **Fase 6** — Deploy: Railway (backend) + Vercel (frontend) + Qdrant Cloud
