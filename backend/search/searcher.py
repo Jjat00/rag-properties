@@ -1,6 +1,7 @@
 """Semantic search engine: builds Qdrant filters from parsed queries and runs vector search."""
 
 import logging
+import time
 
 from pydantic import BaseModel
 from qdrant_client import AsyncQdrantClient
@@ -98,6 +99,19 @@ class PropertyResult(BaseModel):
     address_name: str | None = None
 
 
+class SearchMetrics(BaseModel):
+    """Performance and score metrics for a search."""
+
+    parse_time_ms: float = 0.0
+    embed_time_ms: float = 0.0
+    search_time_ms: float = 0.0
+    total_time_ms: float = 0.0
+    candidates_before_filter: int = 0
+    score_min: float = 0.0
+    score_max: float = 0.0
+    score_avg: float = 0.0
+
+
 class SearchResult(BaseModel):
     """Full search response including parsed filters and results."""
 
@@ -106,6 +120,7 @@ class SearchResult(BaseModel):
     filters_applied: bool
     results: list[PropertyResult]
     total: int
+    metrics: SearchMetrics = SearchMetrics()
 
 
 def _normalize_parsed_locations(parsed: ParsedQuery) -> tuple[ParsedQuery, list[str] | None]:
@@ -240,8 +255,10 @@ class Searcher:
         query: str,
         parsed: ParsedQuery,
         top_k: int | None = None,
+        parse_time_ms: float = 0.0,
     ) -> SearchResult:
         """Execute the full search pipeline: normalize → filter → embed → query."""
+        total_start = time.perf_counter()
         k = top_k or self._top_k
 
         # Normalize locations extracted by LLM
@@ -254,10 +271,17 @@ class Searcher:
         if filters_applied:
             logger.info("Qdrant filter: %s", qdrant_filter.model_dump(exclude_none=True))
 
+        # Get total points in collection (candidates before filtering)
+        collection_info = await self._client.get_collection(self._provider.collection_name)
+        candidates_before_filter = collection_info.indexed_vectors_count or 0
+
         # Embed the full user query
+        embed_start = time.perf_counter()
         query_vector = await self._provider.embed_query(parsed.semantic_query)
+        embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
         # Search in Qdrant
+        search_start = time.perf_counter()
         results = await self._client.query_points(
             collection_name=self._provider.collection_name,
             query=query_vector,
@@ -265,6 +289,7 @@ class Searcher:
             limit=k,
             with_payload=True,
         )
+        search_time_ms = (time.perf_counter() - search_start) * 1000
 
         # Format results
         properties: list[PropertyResult] = []
@@ -297,10 +322,26 @@ class Searcher:
                 )
             )
 
+        # Compute score stats
+        scores = [p.score for p in properties]
+        total_time_ms = (time.perf_counter() - total_start) * 1000
+
+        metrics = SearchMetrics(
+            parse_time_ms=round(parse_time_ms, 2),
+            embed_time_ms=round(embed_time_ms, 2),
+            search_time_ms=round(search_time_ms, 2),
+            total_time_ms=round(total_time_ms + parse_time_ms, 2),
+            candidates_before_filter=candidates_before_filter,
+            score_min=round(min(scores), 4) if scores else 0.0,
+            score_max=round(max(scores), 4) if scores else 0.0,
+            score_avg=round(sum(scores) / len(scores), 4) if scores else 0.0,
+        )
+
         return SearchResult(
             query=query,
             parsed_filters=parsed,
             filters_applied=filters_applied,
             results=properties,
             total=len(properties),
+            metrics=metrics,
         )

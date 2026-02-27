@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
@@ -138,7 +139,9 @@ async def search(request: SearchRequest) -> SearchResult:
     The query is parsed by an LLM to extract structured filters (city, bedrooms,
     price range, etc.), then a vector search runs against the filtered candidates.
     """
+    parse_start = time.perf_counter()
     parsed = await query_parser.parse(request.query)
+    parse_time_ms = (time.perf_counter() - parse_start) * 1000
 
     provider = embedding_registry.get(request.model)
     searcher = Searcher(
@@ -147,4 +150,4 @@ async def search(request: SearchRequest) -> SearchResult:
         top_k=request.top_k,
     )
 
-    return await searcher.search(request.query, parsed)
+    return await searcher.search(request.query, parsed, parse_time_ms=parse_time_ms)
