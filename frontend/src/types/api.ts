@@ -12,6 +12,8 @@ export interface ParsedQuery {
   max_price: number | null;
   min_surface: number | null;
   max_surface: number | null;
+  min_roofed_surface: number | null;
+  max_roofed_surface: number | null;
   condition: string | null;
   currency: string | null;
   semantic_query: string;

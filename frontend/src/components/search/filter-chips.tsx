@@ -8,65 +8,62 @@ interface FilterChipsProps {
 
 interface Chip {
   label: string
-  variant: "location" | "type" | "numeric"
+  variant: "location" | "type" | "numeric" | "hint"
 }
 
 const VARIANT_CLASSES: Record<Chip["variant"], string> = {
   location: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  type: "bg-green-500/15 text-green-400 border-green-500/30",
-  numeric: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  type:     "bg-green-500/15 text-green-400 border-green-500/30",
+  numeric:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  hint:     "bg-purple-500/15 text-purple-400 border-purple-500/30",
+}
+
+function rangeLabel(min: number | null, max: number | null, unit = "", fmt?: (n: number) => string): string {
+  const f = fmt ?? ((n: number) => `${n}${unit}`)
+  if (min != null && max != null) return `${f(min)} – ${f(max)}`
+  if (min != null) return `${f(min)}+`
+  return `máx ${f(max!)}`
 }
 
 function buildChips(f: ParsedQuery): Chip[] {
   const chips: Chip[] = []
 
-  if (f.city) chips.push({ label: `Ciudad: ${f.city}`, variant: "location" })
+  // Location — hard filters (azul)
+  if (f.city)  chips.push({ label: `Ciudad: ${f.city}`,  variant: "location" })
   if (f.state) chips.push({ label: `Estado: ${f.state}`, variant: "location" })
-  if (f.neighborhood) chips.push({ label: `Zona: ${f.neighborhood}`, variant: "location" })
 
+  // Neighborhood is NOT a hard filter — shown as hint (morado)
+  if (f.neighborhood) chips.push({ label: `Zona: ${f.neighborhood}`, variant: "hint" })
+
+  // Type / operation / condition — keyword filters (verde)
   if (f.property_type) chips.push({ label: `Tipo: ${f.property_type}`, variant: "type" })
   if (f.operation) {
     const op = f.operation === "sale" ? "Venta" : f.operation === "rent" ? "Renta" : f.operation
-    chips.push({ label: `Operacion: ${op}`, variant: "type" })
+    chips.push({ label: `Operación: ${op}`, variant: "type" })
   }
-  if (f.condition) chips.push({ label: `Condicion: ${f.condition}`, variant: "type" })
+  if (f.condition) chips.push({ label: `Condición: ${f.condition}`, variant: "type" })
+  if (f.currency) chips.push({ label: `Moneda: ${f.currency}`, variant: "type" })
 
-  if (f.min_bedrooms != null || f.max_bedrooms != null) {
-    const label = f.min_bedrooms != null && f.max_bedrooms != null
-      ? `Recamaras: ${f.min_bedrooms}-${f.max_bedrooms}`
-      : f.min_bedrooms != null
-        ? `Recamaras: ${f.min_bedrooms}+`
-        : `Recamaras: max ${f.max_bedrooms}`
-    chips.push({ label, variant: "numeric" })
-  }
+  // Numeric range filters (naranja)
+  if (f.min_bedrooms != null || f.max_bedrooms != null)
+    chips.push({ label: `Recámaras: ${rangeLabel(f.min_bedrooms, f.max_bedrooms)}`, variant: "numeric" })
 
-  if (f.min_bathrooms != null || f.max_bathrooms != null) {
-    const label = f.min_bathrooms != null && f.max_bathrooms != null
-      ? `Banos: ${f.min_bathrooms}-${f.max_bathrooms}`
-      : f.min_bathrooms != null
-        ? `Banos: ${f.min_bathrooms}+`
-        : `Banos: max ${f.max_bathrooms}`
-    chips.push({ label, variant: "numeric" })
-  }
+  if (f.min_bathrooms != null || f.max_bathrooms != null)
+    chips.push({ label: `Baños: ${rangeLabel(f.min_bathrooms, f.max_bathrooms)}`, variant: "numeric" })
 
   if (f.min_price != null || f.max_price != null) {
-    const cur = f.currency
-    const label = f.min_price != null && f.max_price != null
-      ? `Precio: ${formatPrice(f.min_price, cur)} - ${formatPrice(f.max_price, cur)}`
-      : f.min_price != null
-        ? `Precio: desde ${formatPrice(f.min_price, cur)}`
-        : `Precio: hasta ${formatPrice(f.max_price, cur)}`
-    chips.push({ label, variant: "numeric" })
+    const cur = f.currency ?? undefined
+    chips.push({
+      label: `Precio: ${rangeLabel(f.min_price, f.max_price, "", (n) => formatPrice(n, cur))}`,
+      variant: "numeric",
+    })
   }
 
-  if (f.min_surface != null || f.max_surface != null) {
-    const label = f.min_surface != null && f.max_surface != null
-      ? `Superficie: ${f.min_surface}-${f.max_surface}m2`
-      : f.min_surface != null
-        ? `Superficie: ${f.min_surface}m2+`
-        : `Superficie: max ${f.max_surface}m2`
-    chips.push({ label, variant: "numeric" })
-  }
+  if (f.min_surface != null || f.max_surface != null)
+    chips.push({ label: `Superficie: ${rangeLabel(f.min_surface, f.max_surface, "m²")}`, variant: "numeric" })
+
+  if (f.min_roofed_surface != null || f.max_roofed_surface != null)
+    chips.push({ label: `Techada: ${rangeLabel(f.min_roofed_surface, f.max_roofed_surface, "m²")}`, variant: "numeric" })
 
   return chips
 }

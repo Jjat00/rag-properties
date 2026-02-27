@@ -231,6 +231,16 @@ def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -
                 ),
             )
         )
+    if parsed.min_roofed_surface is not None or parsed.max_roofed_surface is not None:
+        conditions.append(
+            FieldCondition(
+                key="roofed_surface",
+                range=Range(
+                    gte=parsed.min_roofed_surface,
+                    lte=parsed.max_roofed_surface,
+                ),
+            )
+        )
 
     if not conditions:
         return None

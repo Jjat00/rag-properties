@@ -29,6 +29,7 @@ PAYLOAD_INDEXES: dict[str, PayloadSchemaType | TextIndexParams] = {
     "bathrooms": PayloadSchemaType.INTEGER,
     "price": PayloadSchemaType.FLOAT,
     "surface": PayloadSchemaType.FLOAT,
+    "roofed_surface": PayloadSchemaType.FLOAT,
     "condition": PayloadSchemaType.KEYWORD,
     "currency": PayloadSchemaType.KEYWORD,
 }
