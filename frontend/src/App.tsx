@@ -7,6 +7,7 @@ import { SearchBar } from "@/components/search/search-bar"
 import { ModelSelector } from "@/components/search/model-selector"
 import { FilterChips } from "@/components/search/filter-chips"
 import { ResultsGrid } from "@/components/results/results-grid"
+import { LoadingSkeleton } from "@/components/results/loading-skeleton"
 import { ScoreGauge } from "@/components/analytics/score-gauge"
 import { TimingBreakdown } from "@/components/analytics/timing-breakdown"
 import { ScoreDistribution } from "@/components/analytics/score-distribution"
@@ -83,9 +84,12 @@ function App() {
           {/* Error */}
           {error && (
             <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-              {error}
+              Error: {error}
             </div>
           )}
+
+          {/* Loading skeleton */}
+          {status === "loading" && <LoadingSkeleton />}
 
           {/* Results tabs */}
           {data && (
