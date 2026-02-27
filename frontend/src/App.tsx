@@ -1,0 +1,143 @@
+import { useState, useEffect } from "react"
+import { Activity, Search as SearchIcon, BarChart3, GitCompare } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { SearchBar } from "@/components/search/search-bar"
+import { ModelSelector } from "@/components/search/model-selector"
+import { FilterChips } from "@/components/search/filter-chips"
+import { ResultsGrid } from "@/components/results/results-grid"
+import { ScoreGauge } from "@/components/analytics/score-gauge"
+import { TimingBreakdown } from "@/components/analytics/timing-breakdown"
+import { ScoreDistribution } from "@/components/analytics/score-distribution"
+import { SimilarityGraph } from "@/components/analytics/similarity-graph"
+import { ModelComparison } from "@/components/analytics/model-comparison"
+import { useSearch } from "@/hooks/use-search"
+import { useModels } from "@/hooks/use-models"
+import { fetchHealth } from "@/lib/api"
+
+function App() {
+  const { models, defaultModel } = useModels()
+  const [selectedModel, setSelectedModel] = useState("")
+  const [topK, setTopK] = useState(10)
+  const [healthy, setHealthy] = useState<boolean | null>(null)
+  const { status, data, error, search } = useSearch()
+
+  useEffect(() => {
+    if (defaultModel && !selectedModel) setSelectedModel(defaultModel)
+  }, [defaultModel, selectedModel])
+
+  useEffect(() => {
+    fetchHealth()
+      .then(() => setHealthy(true))
+      .catch(() => setHealthy(false))
+  }, [])
+
+  const handleSearch = (query: string) => {
+    search(query, selectedModel, topK)
+  }
+
+  return (
+    <TooltipProvider>
+      <div className="min-h-screen bg-background">
+        {/* Nav */}
+        <nav className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <SearchIcon className="h-5 w-5 text-primary" />
+              <span className="font-semibold text-foreground">RAG Properties Playground</span>
+            </div>
+            <Badge
+              variant="outline"
+              className={
+                healthy === true
+                  ? "bg-green-500/15 text-green-400 border-green-500/30"
+                  : healthy === false
+                    ? "bg-red-500/15 text-red-400 border-red-500/30"
+                    : "bg-muted text-muted-foreground border-border"
+              }
+            >
+              <Activity className="h-3 w-3 mr-1" />
+              {healthy === true ? "Online" : healthy === false ? "Offline" : "Checking..."}
+            </Badge>
+          </div>
+        </nav>
+
+        {/* Main content */}
+        <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          {/* Search */}
+          <SearchBar onSearch={handleSearch} loading={status === "loading"} />
+
+          {/* Model + TopK selector */}
+          <ModelSelector
+            models={models}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            topK={topK}
+            onTopKChange={setTopK}
+          />
+
+          {/* Filter chips */}
+          {data && <FilterChips filters={data.parsed_filters} />}
+
+          {/* Error */}
+          {error && (
+            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Results tabs */}
+          {data && (
+            <Tabs defaultValue="results" className="w-full">
+              <TabsList className="bg-card border border-border">
+                <TabsTrigger value="results" className="gap-1.5">
+                  <SearchIcon className="h-3.5 w-3.5" />
+                  Resultados ({data.total})
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="gap-1.5">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Analytics
+                </TabsTrigger>
+                <TabsTrigger value="compare" className="gap-1.5">
+                  <GitCompare className="h-3.5 w-3.5" />
+                  Comparar
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="results" className="mt-4">
+                <ResultsGrid results={data.results} />
+              </TabsContent>
+
+              <TabsContent value="analytics" className="mt-4 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <ScoreGauge metrics={data.metrics} />
+                  <TimingBreakdown metrics={data.metrics} />
+                  <ScoreDistribution results={data.results} />
+                </div>
+                <SimilarityGraph results={data.results} />
+              </TabsContent>
+
+              <TabsContent value="compare" className="mt-4">
+                <ModelComparison models={models} currentQuery={data.query} topK={topK} />
+              </TabsContent>
+            </Tabs>
+          )}
+
+          {/* Idle state */}
+          {status === "idle" && (
+            <div className="text-center py-20 text-muted-foreground">
+              <SearchIcon className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p className="text-lg">Escribe una busqueda en lenguaje natural</p>
+              <p className="text-sm mt-1">
+                Ejemplo: "casa de 4 habitaciones con 2 banos en Cancun menos de 5 millones"
+              </p>
+            </div>
+          )}
+        </main>
+      </div>
+    </TooltipProvider>
+  )
+}
+
+export default App
