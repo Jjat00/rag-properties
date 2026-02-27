@@ -2,13 +2,13 @@
 
 ## Objetivo
 
-Sistema RAG para búsqueda semántica de propiedades inmobiliarias.
+Sistema RAG para búsqueda semántica de propiedades inmobiliarias en México.
 El usuario puede buscar propiedades en lenguaje natural (ej: "casa de 4 habitaciones con 2 baños en Cancún")
 y el sistema retorna las propiedades más relevantes del catálogo.
 
 **Flujo principal:**
-1. Ingesta: Leer Excel de propiedades → generar embeddings → almacenar en Qdrant
-2. Búsqueda: Query en lenguaje natural → embedding → búsqueda vectorial en Qdrant → resultados
+1. Ingesta: Leer Excel de propiedades → canonicalizar ubicaciones → generar embeddings → almacenar en Qdrant
+2. Búsqueda: Query en lenguaje natural → normalizar ubicaciones → extraer filtros con LLM → pre-filtrar metadata → búsqueda vectorial dense con query completo → resultados
 
 ---
 
@@ -16,8 +16,8 @@ y el sistema retorna las propiedades más relevantes del catálogo.
 
 - **Lenguaje**: Python (backend)
 - **Package manager**: `uv` — SIEMPRE usar uv, nunca pip directamente
-- **Vector DB**: Qdrant (local con Docker inicialmente)
-- **Embeddings**: OpenAI text-embedding-3-small (1536d, barato, buen soporte español)
+- **Vector DB**: Qdrant (local con Docker, imagen `qdrant/qdrant:latest`)
+- **Embeddings**: OpenAI text-embedding-3-small/large y Gemini text-embedding-004 (multi-modelo, intercambiables)
 - **Query parsing**: Gemini Flash o GPT-4o-mini con structured output para extraer filtros
 - **LLM credits**: Gemini y OpenAI (NO Anthropic). Nunca usar APIs de Anthropic.
 - **Self-hosted**: NADA self-hosted. Solo APIs y servicios managed.
@@ -31,18 +31,20 @@ y el sistema retorna las propiedades más relevantes del catálogo.
 
 ### Python y entorno virtual
 - **SIEMPRE usar `uv`** como manejador de paquetes. Nunca usar `pip install` directamente.
-- Activar el entorno virtual antes de ejecutar cualquier script Python:
+- El proyecto Python vive en `backend/` con su propio `pyproject.toml` y `.venv`
+- Activar el entorno virtual antes de ejecutar cualquier script:
   ```bash
-  source .venv/bin/activate
+  cd backend && source .venv/bin/activate
   ```
-- Para instalar dependencias: `uv add <paquete>`
-- Para crear el entorno: `uv venv && source .venv/bin/activate`
-- Para ejecutar scripts: `uv run python script.py` o con el venv activado
+- Para instalar dependencias: `cd backend && uv add <paquete>`
+- Para ejecutar scripts: `cd backend && uv run python script.py` o con el venv activado
+- Los imports son absolutos desde `backend/` como raíz (ej: `from config import settings`)
 
 ### Qdrant
 - Usar Qdrant **local** via Docker durante desarrollo
 - Puerto por defecto: `6333` (HTTP) y `6334` (gRPC)
-- Arrancar con: `docker run -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage qdrant/qdrant`
+- **Usar siempre `qdrant/qdrant:latest`** — el client v1.17+ requiere server v1.17+
+- Arrancar con: `docker run -d --name qdrant -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage qdrant/qdrant:latest`
 
 ### Código
 - Usar **type hints** en todas las funciones Python
@@ -52,25 +54,39 @@ y el sistema retorna las propiedades más relevantes del catálogo.
 
 ---
 
-## Estructura del proyecto (objetivo)
+## Estructura del proyecto
 
 ```
 rag-properties/
 ├── CLAUDE.md
-├── pyproject.toml          # Gestionado por uv
-├── .env                    # Variables de entorno (no commitear)
-├── .env.example
+├── README.md
+├── plan.md                     # Plan de fases y decisiones
 ├── data/
-│   └── properties.xlsx     # Excel fuente de datos
+│   └── properties.xlsx         # Excel fuente de datos
 ├── backend/
-│   ├── main.py             # FastAPI app
+│   ├── pyproject.toml          # Gestionado por uv
+│   ├── uv.lock
+│   ├── .venv/
+│   ├── .env                    # Variables de entorno (no commitear)
+│   ├── .env.example
+│   ├── config.py               # Settings, enum de modelos, dimensiones
+│   ├── main.py                 # FastAPI app + endpoints
+│   ├── models/
+│   │   └── property.py         # Modelo Pydantic de propiedad
+│   ├── embeddings/
+│   │   ├── base.py             # Clase abstracta EmbeddingProvider
+│   │   ├── openai_provider.py  # OpenAI text-embedding-3-small/large
+│   │   ├── gemini_provider.py  # Gemini text-embedding-004
+│   │   └── registry.py         # Registry con cache de providers
+│   ├── vectorstore/
+│   │   └── qdrant_manager.py   # Gestión de colecciones e indexes
 │   ├── ingestion/
-│   │   ├── excel_loader.py # Leer y parsear Excel
-│   │   └── indexer.py      # Generar embeddings e indexar en Qdrant
-│   ├── search/
-│   │   └── searcher.py     # Búsqueda semántica
-│   └── models/
-│       └── property.py     # Modelos Pydantic de propiedad
+│   │   ├── excel_loader.py     # Leer y parsear Excel
+│   │   └── indexer.py          # Generar embeddings e indexar en Qdrant
+│   └── search/
+│       ├── location_normalizer.py  # Diccionario de aliases MX
+│       ├── query_parser.py         # LLM structured output
+│       └── searcher.py             # Búsqueda semántica
 └── frontend/
     └── (playground web)
 ```
@@ -105,19 +121,81 @@ Columnas del Excel fuente:
 | `Attributes: Condition` | Condición (Bueno, Excelente, etc.) |
 | `Address: Name` | Nombre de referencia de la dirección |
 
-**Volumen inicial**: ~8,000 propiedades, escalable a más.
+**Volumen**: ~8,000 propiedades iniciales, escalable a 100K+.
+
+---
+
+## Estrategia de embeddings
 
 ### Texto para embedding
-El texto que se va a embeddear por propiedad debe combinar los campos más relevantes para búsqueda semántica:
+El Title es el campo con mayor valor semántico (escrito por humanos para describir la propiedad).
+El template prioriza Title primero, luego contexto estructurado como fallback:
+
 ```
-{Type} en {operation} en {City}, {State}. {Title}.
-{Suites} recámaras, {Bathrooms} baños.
-Superficie: {Surface}m² ({RoofedSurface}m² techados).
-Condición: {Condition}. Colonia: {Neighborhood}. Precio: {Currency} {Price}.
+{Title}. {Type} en {operation} en {Neighborhood}, {City}, {State}.
+{Bedrooms} recámaras, {Bathrooms} baños, {Surface}m².
+Condición: {Condition}.
 ```
 
-### Payload en Qdrant
-Almacenar todos los campos originales como payload para poder filtrar y mostrar resultados completos.
+**Incluido en embedding**: Title, Type, operation, Neighborhood, City, State, Bedrooms, Bathrooms, Surface, Condition.
+**Excluido del embedding** (solo en payload): precio (filtro exacto es mejor), dirección cruda (ruido), datos del agente.
+**Manejo de nulls**: Omitir el fragmento si el campo es null, nunca embeddear "None" o "N/A".
+
+### Un solo vector por propiedad
+- Los filtros de metadata ya separan por aspecto (ciudad, recámaras, precio)
+- Named vectors (location vs description) no se justifican: ubicación y descripción están correlacionados semánticamente
+- Aplica tanto para 8K como para 100K+ propiedades
+
+### Una colección por modelo de embedding
+- Qdrant requiere dimensiones uniformes por colección
+- Permite A/B testing limpio entre modelos
+- Consolidar a una sola colección después de determinar el modelo ganador
+
+### Qué embeddear del query del usuario
+**Siempre embeddear el query COMPLETO del usuario**, no solo el residuo semántico después de extraer filtros.
+Los filtros ya restringen los candidatos en Qdrant; la redundancia en el embedding no daña.
+
+### Direcciones: NO en embedding, SÍ en payload
+Las direcciones crudas ("Av. 5, C. 19 Colonia Tumben Kaa norte-Región 012") son ruido para el embedding.
+Se guardan en payload para mostrar en resultados. El Neighborhood sí entra al embedding porque los usuarios
+buscan por colonia/zona de forma descriptiva.
+
+---
+
+## Normalización de ubicaciones (México)
+
+### Problema
+Los usuarios escriben ubicaciones de formas muy variables:
+- "Edo. de México" / "Estado de México" / "Edomex" / "EdoMex"
+- "CDMX" / "Ciudad de México" / "DF" / "D.F."
+- "Q. Roo" / "Quintana Roo" / "QRoo"
+- "Playa" / "Playa del Carmen" / "PDC"
+
+Los filtros keyword de Qdrant son exact-match, así que la normalización es obligatoria.
+
+### Doble capa de normalización
+
+**Capa 1 — Diccionario estático** (`location_normalizer.py`):
+- Mapea variantes comunes a nombres canónicos (costo cero, cubre 95%)
+- Se aplica tanto en ingesta (canonicalizar datos del Excel) como en query time
+- Los nombres canónicos deben salir de auditar el Excel: `df["Address: City: Name"].value_counts()`
+
+**Capa 2 — LLM parser** (Gemini Flash / GPT-4o-mini):
+- Resuelve casos ambiguos ("México" solo → Ciudad o Estado según contexto)
+- Normaliza variantes no cubiertas por el diccionario
+- El system prompt incluye la lista de nombres canónicos del catálogo
+
+### Gotchas de México
+- **"México" es ambiguo**: default al más común en los datos
+- **Acentos inconsistentes**: canonicalizar en ingesta ("Cancun" → "Cancún")
+- **Municipio vs ciudad**: "Benito Juárez" vs "Cancún" — usar `MatchAny` con variantes
+- **"Playa" solo**: resolver a "Playa del Carmen" solo si contexto Q. Roo
+- **Colonias sin estándar**: NO filtrar por keyword, dejar al embedding semántico
+
+### Indexes de ubicación en Qdrant
+- `city` → keyword (exact match tras normalización)
+- `state` → keyword (exact match tras normalización)
+- `neighborhood` → text (full-text index para partial matching)
 
 ---
 
@@ -128,8 +206,6 @@ El flujo es lineal (query → parse → search → respond). No hay branching, l
 LangGraph añade complejidad sin beneficio para este caso. Un endpoint FastAPI simple es suficiente.
 
 ### Modelos de embedding (multi-modelo, intercambiables)
-El sistema soporta múltiples modelos de embedding para poder comparar resultados.
-Cada modelo genera una colección separada en Qdrant.
 
 | Modelo | Dimensiones | Costo | Provider |
 |--------|------------|-------|----------|
@@ -143,18 +219,23 @@ Cada modelo genera una colección separada en Qdrant.
 - Esto permite A/B testing de calidad de resultados
 
 ### Estrategia de búsqueda: Filtros primero, semántica después
-En búsqueda inmobiliaria, el 80-90% de la relevancia viene de atributos estructurados.
-1. **Gemini Flash / GPT-4o-mini** parsea el query con structured output → extrae filtros + texto semántico
-2. **Qdrant pre-filtra** por metadata (ciudad, recámaras, precio, tipo)
-3. **Búsqueda vectorial dense** sobre los resultados filtrados
-4. Retorna top-k propiedades
+
+```
+Query usuario
+    → Capa 1: Diccionario estático normaliza ubicaciones
+    → Capa 2: LLM parser extrae filtros + query semántico
+    → Qdrant pre-filtra por metadata (ciudad, recámaras, precio, tipo)
+    → Búsqueda vectorial dense con query COMPLETO del usuario
+    → Retorna top-k propiedades
+```
 
 ### Qdrant: Configuración de colecciones
 - **Una colección por modelo de embedding** (ej: `properties_openai_small`, `properties_openai_large`, `properties_gemini`)
 - Cada colección tiene su vector dense con las dimensiones correspondientes
 - **Payload indexes** (crear ANTES de subir datos):
-  - `city` (keyword) — para filtrar por ciudad
-  - `state` (keyword) — para filtrar por estado
+  - `city` (keyword) — para filtrar por ciudad (normalizado)
+  - `state` (keyword) — para filtrar por estado (normalizado)
+  - `neighborhood` (text) — full-text index para partial matching
   - `property_type` (keyword) — casa, departamento, terreno, etc.
   - `operation` (keyword) — sale, rent
   - `bedrooms` (integer) — número de recámaras
@@ -163,31 +244,44 @@ En búsqueda inmobiliaria, el 80-90% de la relevancia viene de atributos estruct
   - `surface` (float) — superficie total m²
   - `condition` (keyword) — Bueno, Excelente, etc.
 
+### Escala 100K+
+- **Scalar quantization INT8**: reduce RAM 4x con mínima pérdida de precisión
+- **on_disk_payload**: payload en disco, vectores en RAM
+- **Sharding**: NO necesario hasta 5M+ vectores
+
 ### Query parsing con Gemini Flash / GPT-4o-mini
 Usar structured output / function calling para extraer filtros del query.
 System prompt para el parser:
 ```
 Eres un asistente de búsqueda inmobiliaria en México. Extrae filtros estructurados
-del query del usuario. Normaliza nombres de ciudades (ej: "cancun" → "Cancún").
+del query del usuario. Normaliza nombres de ciudades y estados a sus formas canónicas.
 Convierte expresiones de precio ("4 millones" → 4000000, "4 mdp" → 4000000).
 Mapea términos coloquiales: "recamaras"/"cuartos" → bedrooms,
 "depa" → departamento, "baños completos" → bathrooms.
-Pon aspectos descriptivos/subjetivos en semantic_query para búsqueda vectorial.
+El campo semantic_query debe contener el query completo original del usuario
+para búsqueda vectorial.
 ```
 
+### Sparse vectors (BM25): Fase 5
+Los sparse vectors ayudan con keywords exactos que dense vectors pierden
+("roof garden", "jacuzzi", "doble altura", IDs internos).
+Pero con filtros de metadata + dense vectors, el beneficio es marginal para el MVP.
+Qdrant soporta BM25 server-side (modelo `Qdrant/bm25`, cero costo de API).
+Se puede agregar como named vector a colecciones existentes + RRF fusion en Fase 5.
+
 ### Reranking: NO por ahora
-Con 8K propiedades y filtros estructurados, la búsqueda híbrida es suficiente.
+Con filtros estructurados + dense search, es suficiente para el MVP.
 Si se necesita en el futuro: Cohere Rerank 3.5 o BGE-reranker-v2-m3.
 
 ---
 
 ## Fases del proyecto
 
-1. **Fase 1 — Backend base**: Inicializar proyecto con uv, FastAPI, modelos Pydantic
-2. **Fase 2 — Ingesta**: Leer Excel, generar embeddings con BGE-M3, indexar en Qdrant
-3. **Fase 3 — Búsqueda**: Query parsing con Claude Haiku + búsqueda híbrida en Qdrant
+1. **Fase 1 — Backend base** ✅: Proyecto uv, FastAPI, modelos Pydantic, embedding providers, Qdrant manager
+2. **Fase 2 — Ingesta**: Leer Excel, canonicalizar ubicaciones, generar embeddings, indexar en Qdrant
+3. **Fase 3 — Búsqueda**: Location normalizer + LLM query parsing + búsqueda vectorial con filtros
 4. **Fase 4 — Frontend**: Playground web para probar búsquedas
-5. **Fase 5 — Mejoras**: Reranking, paginación, filtros avanzados (si se necesitan)
+5. **Fase 5 — Mejoras**: Sparse vectors BM25 + RRF fusion, reranking, paginación
 
 ---
 
@@ -196,17 +290,20 @@ Si se necesita en el futuro: Cohere Rerank 3.5 o BGE-reranker-v2-m3.
 ```bash
 # Levantar Qdrant local
 docker run -d --name qdrant -p 6333:6333 -p 6334:6334 \
-  -v $(pwd)/qdrant_storage:/qdrant/storage qdrant/qdrant
+  -v $(pwd)/qdrant_storage:/qdrant/storage qdrant/qdrant:latest
 
-# Crear entorno virtual
-uv venv
+# Entrar al backend
+cd backend
+
+# Sincronizar dependencias
+uv sync
 
 # Activar entorno
 source .venv/bin/activate
 
-# Instalar dependencias
-uv add fastapi qdrant-client openai openpyxl pandas python-dotenv
+# Instalar nueva dependencia
+uv add <paquete>
 
 # Correr backend
-uv run uvicorn backend.main:app --reload
+uvicorn main:app --reload
 ```
