@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "fastapi-templates": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "fa51843cda87fc738f819c937cc697691255684d27d598dbc64a3a121e480064"
+    },
+    "langchain-architecture": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "0cdd844e5af5d2c47e3faf31ba9b9f1b86a611edecc72e2021688c0b6cce6938"
+    },
+    "qdrant-vector-search": {
+      "source": "davila7/claude-code-templates",
+      "sourceType": "github",
+      "computedHash": "7d759309b0c22b2d6097562d6d349fdac38cfc661fcfbe658f158444403310da"
+    },
+    "rag-implementation": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "593f3b12b946a67978bccd5c2ddd599b060aec60d35f83fbda5764dfd982f099"
+    },
+    "uv-package-manager": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "c12c51350e6a7a8d35bbbaee138765b4f7d317a3046ee5e7024b8985bb6f8db9"
+    }
+  }
+}
