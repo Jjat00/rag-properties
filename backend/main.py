@@ -5,6 +5,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from config import (
     COLLECTION_NAMES,
@@ -15,23 +16,27 @@ from config import (
 from embeddings.registry import EmbeddingRegistry
 from ingestion.excel_loader import load_properties
 from ingestion.indexer import index_properties
+from search.query_parser import QueryParser
+from search.searcher import SearchResult, Searcher
 from vectorstore.qdrant_manager import QdrantManager
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 qdrant_manager: QdrantManager
 embedding_registry: EmbeddingRegistry
+query_parser: QueryParser
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global qdrant_manager, embedding_registry
+    global qdrant_manager, embedding_registry, query_parser
 
     qdrant_manager = QdrantManager(
         host=settings.qdrant_host,
         port=settings.qdrant_port,
     )
     embedding_registry = EmbeddingRegistry(settings)
+    query_parser = QueryParser(settings)
 
     await qdrant_manager.ensure_all_collections()
 
@@ -118,3 +123,28 @@ async def ingest(
     if len(results) == 1:
         return results[0]
     return {"results": results}
+
+
+class SearchRequest(BaseModel):
+    query: str
+    model: EmbeddingModel = settings.default_embedding_model
+    top_k: int = settings.search_top_k
+
+
+@app.post("/search")
+async def search(request: SearchRequest) -> SearchResult:
+    """Search properties using natural language.
+
+    The query is parsed by an LLM to extract structured filters (city, bedrooms,
+    price range, etc.), then a vector search runs against the filtered candidates.
+    """
+    parsed = await query_parser.parse(request.query)
+
+    provider = embedding_registry.get(request.model)
+    searcher = Searcher(
+        client=qdrant_manager.client,
+        provider=provider,
+        top_k=request.top_k,
+    )
+
+    return await searcher.search(request.query, parsed)
