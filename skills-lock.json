@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "fa51843cda87fc738f819c937cc697691255684d27d598dbc64a3a121e480064"
     },
+    "google-adk-python": {
+      "source": "cnemri/google-genai-skills",
+      "sourceType": "github",
+      "computedHash": "4472ea666e4111c4e3b881fd6e3dcea22e5f5c7d3384c31dc6f9a86b836d0160"
+    },
     "langchain-architecture": {
       "source": "wshobson/agents",
       "sourceType": "github",
@@ -21,10 +26,20 @@
       "sourceType": "github",
       "computedHash": "593f3b12b946a67978bccd5c2ddd599b060aec60d35f83fbda5764dfd982f099"
     },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "e688fcd4c5693e14ebd00d48e982dbd2be060fbea89f5f60531e79c704a1bc28"
+    },
     "uv-package-manager": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "computedHash": "c12c51350e6a7a8d35bbbaee138765b4f7d317a3046ee5e7024b8985bb6f8db9"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "4365be772fd3b41994a72ad478472c6d680678e7f3859860ab010e9c46e48ee0"
     }
   }
 }

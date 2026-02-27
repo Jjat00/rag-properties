@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "google-adk-python": {
+      "source": "cnemri/google-genai-skills",
+      "sourceType": "github",
+      "computedHash": "4472ea666e4111c4e3b881fd6e3dcea22e5f5c7d3384c31dc6f9a86b836d0160"
+    }
+  }
+}
