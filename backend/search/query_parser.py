@@ -95,17 +95,27 @@ Variantes:
 ## Instrucciones
 1. Extrae todos los filtros que puedas identificar del query.
 2. Si el usuario menciona un rango ("entre 3 y 5 millones"), usa min y max.
-3. Si dice "menos de X", usa solo max. Si dice "más de X", usa solo min.
-4. Si dice "3 recámaras" sin indicar rango, pon min_bedrooms=3 y max_bedrooms=null.
-5. Si no puedes determinar un filtro, déjalo como null.
-6. semantic_query SIEMPRE debe contener el query COMPLETO original del usuario, sin modificar.
-7. Normaliza ciudades y estados a sus formas canónicas del catálogo.
-8. condition puede ser: "Bueno", "Excelente", "Regular", "Nuevo".
-9. Si dice "más o menos X" / "aproximadamente X" / "como X" / "alrededor de X", \
+3. Si dice "menos de X" / "no más de X" / "máximo X", usa solo max (lte). \
+   Si dice "más de X" / "mínimo X", usa solo min (gte).
+4. "al menos X" / "mínimo X" / "con X o más" / "X+" → solo min (gte). \
+   "no más de X" / "máximo X" / "como mucho X" / "hasta X" → solo max (lte). \
+   Ejemplos: \
+   - "al menos 2 habitaciones" → min_bedrooms=2, max_bedrooms=null \
+   - "no más de 3 habitaciones" → min_bedrooms=null, max_bedrooms=3 \
+   - "al menos 2 baños" → min_bathrooms=2, max_bathrooms=null \
+   - "máximo 200m²" → min_surface=null, max_surface=200 \
+   - "entre 2 y 4 recámaras" → min_bedrooms=2, max_bedrooms=4
+5. Si dice "3 recámaras" sin indicar dirección, pon min_bedrooms=3 y max_bedrooms=null \
+   (asume "al menos 3" por defecto).
+6. Si no puedes determinar un filtro, déjalo como null.
+7. semantic_query SIEMPRE debe contener el query COMPLETO original del usuario, sin modificar.
+8. Normaliza ciudades y estados a sus formas canónicas del catálogo.
+9. condition puede ser: "Bueno", "Excelente", "Regular", "Nuevo".
+10. Si dice "más o menos X" / "aproximadamente X" / "como X" / "alrededor de X", \
 crea un rango de ±5% (min=X*0.95, max=X*1.05).
-10. Para property_type usa el nombre genérico: "Terreno", "Casa", "Departamento", etc. \
+11. Para property_type usa el nombre genérico: "Terreno", "Casa", "Departamento", etc. \
 El sistema expande automáticamente a subtipos (Terreno → Terreno residencial, comercial, etc.).
-11. Maneja typos comunes: "millnes" → "millones", "depatamento" → "Departamento", etc.
+12. Maneja typos comunes: "millnes" → "millones", "depatamento" → "Departamento", etc.
 """
 
 
