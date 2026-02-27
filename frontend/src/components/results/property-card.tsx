@@ -50,6 +50,13 @@ export function PropertyCard({ property, index }: PropertyCardProps) {
                 </span>
               </div>
 
+              {/* Internal ID */}
+              {property.internal_id && (
+                <span className="mt-1 inline-block text-[11px] font-mono text-muted-foreground/60">
+                  {property.internal_id}
+                </span>
+              )}
+
               {/* Stats */}
               <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                 {property.bedrooms != null && (

@@ -209,6 +209,12 @@ Interpreta el INTENT aunque el query sea muy informal, tenga typos o sea convers
 10. Campos que no aplican → null. NUNCA inventes filtros que el usuario no mencionó.
 11. Si el usuario menciona características que no tienen campo (alberca, jardín, estacionamiento, \
     roof garden, vista al mar, amueblado) → no pongas ningún filtro, solo déjalos en semantic_query.
+12. clean_query = versión LIMPIA y CORREGIDA del query, optimizada para búsqueda semántica.
+    - Corrige errores ortográficos (denden→venden, depa→departamento)
+    - Elimina ruido conversacional (vi una lona, me das info, por favor, etc.)
+    - Mantiene TODA la información relevante para búsqueda (ubicación, tipo, características)
+    - Si el usuario menciona una calle/landmark, inclúyela en clean_query
+    - Ejemplo: "vi una lona de un depa que denden en dumas" → "departamento en venta en Dumas, Polanco"
 """
 
 
@@ -233,6 +239,7 @@ class ParsedQuery(BaseModel):
     condition: str | None = None
     currency: str | None = None
     semantic_query: str
+    clean_query: str = ""
 
 
 class QueryParser:
@@ -263,4 +270,4 @@ class QueryParser:
             return parsed
         except Exception:
             logger.exception("Query parsing failed, falling back to pure vector search")
-            return ParsedQuery(semantic_query=query)
+            return ParsedQuery(semantic_query=query, clean_query=query)

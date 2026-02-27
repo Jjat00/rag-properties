@@ -101,7 +101,8 @@ class Property(BaseModel):
     def embedding_text(self) -> str:
         """Build text for embedding. Title first (highest semantic value),
         then structured context. Price excluded (better as exact filter).
-        Address excluded (noise). Neighborhood included (descriptive search).
+        Address included (users search by street name).
+        Neighborhood included (descriptive search).
         """
         parts: list[str] = []
 
@@ -113,6 +114,9 @@ class Property(BaseModel):
         if location:
             type_op += f" en {location}"
         parts.append(type_op + ".")
+
+        if self.address and self.address.strip() not in ("", "0", "null"):
+            parts.append(self.address.strip() + ".")
 
         attrs: list[str] = []
         if self.bedrooms is not None:

@@ -17,6 +17,7 @@ export interface ParsedQuery {
   condition: string | null;
   currency: string | null;
   semantic_query: string;
+  clean_query: string;
 }
 
 export interface PropertyResult {

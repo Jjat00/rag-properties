@@ -287,7 +287,8 @@ class Searcher:
 
         # Embed the full user query
         embed_start = time.perf_counter()
-        query_vector = await self._provider.embed_query(parsed.semantic_query)
+        embed_text = parsed.clean_query or parsed.semantic_query
+        query_vector = await self._provider.embed_query(embed_text)
         embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
         # Search in Qdrant
