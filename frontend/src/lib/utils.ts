@@ -8,15 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 export function formatPrice(price: number | null, currency?: string | null): string {
   if (price == null) return "N/A"
   const cur = currency ?? "MXN"
-  if (price >= 1_000_000) {
-    const m = price / 1_000_000
-    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M ${cur}`
-  }
-  if (price >= 1_000) {
-    const k = price / 1_000
-    return `$${k % 1 === 0 ? k.toFixed(0) : k.toFixed(0)}K ${cur}`
-  }
-  return `$${price.toLocaleString()} ${cur}`
+  return `$${price.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${cur}`
 }
 
 export function formatScore(score: number): number {
