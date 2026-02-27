@@ -35,6 +35,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     qdrant_manager = QdrantManager(
         host=settings.qdrant_host,
         port=settings.qdrant_port,
+        url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key,
     )
     embedding_registry = EmbeddingRegistry(settings)
     query_parser = QueryParser(settings)

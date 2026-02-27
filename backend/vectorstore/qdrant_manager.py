@@ -36,8 +36,17 @@ _UPSERT_BATCH_SIZE = 100
 
 
 class QdrantManager:
-    def __init__(self, host: str, port: int) -> None:
-        self._client = AsyncQdrantClient(host=host, port=port)
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6333,
+        url: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        if url:
+            self._client = AsyncQdrantClient(url=url, api_key=api_key)
+        else:
+            self._client = AsyncQdrantClient(host=host, port=port)
 
     @property
     def client(self) -> AsyncQdrantClient:

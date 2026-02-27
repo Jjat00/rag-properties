@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     gemini_api_key: str = ""
     default_embedding_model: EmbeddingModel = EmbeddingModel.OPENAI_SMALL
+    qdrant_url: str | None = None
+    qdrant_api_key: str | None = None
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     excel_path: str = "data/properties.xlsx"
