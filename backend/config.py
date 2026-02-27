@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     qdrant_port: int = 6333
     excel_path: str = "data/properties.xlsx"
     search_top_k: int = 10
-    query_parser_model: str = "gemini-2.5-flash"
+    query_parser_model: str = "gemini-3-flash-preview"
     cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:5173"]
     )
