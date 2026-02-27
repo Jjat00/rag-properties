@@ -58,7 +58,7 @@ Después de determinar ganador → consolidar a 1 colección.
    - Cubre: CDMX/DF, Edomex, Q.Roo, acentos, abreviaciones comunes
    - Costo: cero
 
-2. **LLM parser** (Gemini Flash / GPT-4o-mini):
+2. **LLM parser** (Gemini Flash):
    - Resuelve ambigüedades ("México" solo → contexto)
    - Normaliza variantes no cubiertas por diccionario
    - Recibe lista de nombres canónicos en el system prompt
@@ -111,19 +111,30 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 - [x] Fix `gemini_provider.py`: sync→asyncio.to_thread(), modelo actualizado a gemini-embedding-001 (3072d)
 - [x] Verificado: 8803 propiedades cargadas, states canonicalizados correctamente
 
-### Fase 3 — Búsqueda
-- [ ] `query_parser.py`: Gemini Flash / GPT-4o-mini con structured output → ParsedQuery
-- [ ] `searcher.py`: construir filtros Qdrant + vector search con query completo
-- [ ] Endpoint POST `/search` con query en lenguaje natural
-- [ ] Endpoint GET `/search` con filtros explícitos (fallback sin LLM)
+### Fase 3 — Búsqueda ✅
+- [x] `search/query_parser.py`: Gemini Flash con structured output → ParsedQuery (city, state, type, bedrooms, bathrooms, price_min, price_max, operation, semantic_query)
+- [x] `search/searcher.py`: construir filtros Qdrant + vector search con query completo del usuario
+- [x] Endpoint POST `/search` con query en lenguaje natural, modelo y top_k
+- [x] SearchMetrics en respuesta: scores de similitud, filtros aplicados, tiempo de respuesta
+- [x] Query parser actualizado a `gemini-2.0-flash-preview` (gemini-3-flash-preview)
 
-### Fase 4 — Frontend
-- [ ] Playground web (framework por definir)
-- [ ] Input de búsqueda + resultados con cards de propiedades
-- [ ] Filtros visuales opcionales
+### Fase 4 — Frontend ✅
+- [x] Playground web: React 19 + Vite 7 + Shadcn/ui + Tailwind v4 (dark theme)
+- [x] Barra de búsqueda con selección de modelo y top_k
+- [x] Cards de propiedades con precio, ubicación, atributos y score de similitud
+- [x] Loading skeleton mientras carga
+- [x] Gráfica de similitud interactiva (Recharts + d3-force) — scatterplot con zoom/pan
+- [x] Analytics: distribución de scores, histograma, métricas de búsqueda
+- [x] Manejo de errores y estados vacíos
 
-### Fase 5 — Mejoras
+### Fase 5 — Mejoras (pendiente)
 - [ ] Sparse vectors BM25 + RRF hybrid search
 - [ ] Reranking (Cohere Rerank 3.5 si se necesita)
 - [ ] Paginación de resultados
 - [ ] Scalar quantization INT8 para escala
+
+### Fase 6 — Deploy (en progreso)
+- [x] Soporte Qdrant Cloud: `QDRANT_URL` + `QDRANT_API_KEY` en config y QdrantManager
+- [ ] Backend en Railway (FastAPI + uv)
+- [ ] Frontend en Vercel (React + Vite)
+- [ ] Re-indexar 8803 propiedades en Qdrant Cloud
