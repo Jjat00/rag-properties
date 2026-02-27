@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from qdrant_client import AsyncQdrantClient
@@ -35,6 +36,8 @@ PAYLOAD_INDEXES: dict[str, PayloadSchemaType | TextIndexParams] = {
 }
 
 _UPSERT_BATCH_SIZE = 100
+_MAX_RETRIES = 3
+_RETRY_DELAY = 3.0
 
 
 class QdrantManager:
@@ -46,9 +49,9 @@ class QdrantManager:
         api_key: str | None = None,
     ) -> None:
         if url:
-            self._client = AsyncQdrantClient(url=url, api_key=api_key)
+            self._client = AsyncQdrantClient(url=url, api_key=api_key, timeout=120)
         else:
-            self._client = AsyncQdrantClient(host=host, port=port)
+            self._client = AsyncQdrantClient(host=host, port=port, timeout=120)
 
     @property
     def client(self) -> AsyncQdrantClient:
@@ -97,14 +100,26 @@ class QdrantManager:
     async def upsert_points(
         self, collection_name: str, points: list[PointStruct]
     ) -> int:
-        """Upsert points in batches. Returns total points upserted."""
+        """Upsert points in batches with retry. Returns total points upserted."""
         total = 0
         for i in range(0, len(points), _UPSERT_BATCH_SIZE):
             batch = points[i : i + _UPSERT_BATCH_SIZE]
-            await self._client.upsert(
-                collection_name=collection_name,
-                points=batch,
-            )
+            for attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    await self._client.upsert(
+                        collection_name=collection_name,
+                        points=batch,
+                    )
+                    break
+                except Exception:
+                    if attempt == _MAX_RETRIES:
+                        raise
+                    delay = _RETRY_DELAY * attempt
+                    logger.warning(
+                        "Qdrant upsert failed (attempt %d/%d), retrying in %.1fs",
+                        attempt, _MAX_RETRIES, delay,
+                    )
+                    await asyncio.sleep(delay)
             total += len(batch)
             if total % 1000 == 0 or total == len(points):
                 logger.info("Upserted %d / %d points", total, len(points))
