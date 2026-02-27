@@ -13,7 +13,7 @@ export function useModels() {
       .finally(() => setLoading(false))
   }, [])
 
-  const defaultModel = models.find((m) => m.is_default)?.id ?? models[0]?.id ?? "openai-small"
+  const defaultModel = models.find((m) => m.is_default)?.id ?? models[0]?.id ?? "gemini"
 
   return { models, loading, defaultModel }
 }
