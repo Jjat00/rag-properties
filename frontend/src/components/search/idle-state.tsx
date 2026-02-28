@@ -31,41 +31,41 @@ export function IdleState({ modelCount, onSuggestion }: IdleStateProps) {
   return (
     <div className="space-y-3 animate-in fade-in duration-500">
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <Card className="bg-card border-border">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Building2 className="h-5 w-5 text-primary" />
+          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <div className="flex-shrink-0 w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             </div>
-            <div>
-              <p className="text-xl font-bold text-foreground font-mono leading-none">8,803</p>
-              <p className="text-xs text-muted-foreground mt-0.5">propiedades indexadas</p>
+            <div className="min-w-0">
+              <p className="text-base sm:text-xl font-bold text-foreground font-mono leading-none">8,803</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 leading-tight">propiedades indexadas</p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Cpu className="h-5 w-5 text-primary" />
+          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <div className="flex-shrink-0 w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Cpu className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             </div>
-            <div>
-              <p className="text-xl font-bold text-foreground font-mono leading-none">
+            <div className="min-w-0">
+              <p className="text-base sm:text-xl font-bold text-foreground font-mono leading-none">
                 {modelCount > 0 ? modelCount : 3}
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">modelos de embedding</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 leading-tight">modelos de embedding</p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Zap className="h-5 w-5 text-primary" />
+          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <div className="flex-shrink-0 w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Zap className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             </div>
-            <div>
-              <p className="text-xl font-bold text-foreground font-mono leading-none">~50ms</p>
-              <p className="text-xs text-muted-foreground mt-0.5">latencia promedio</p>
+            <div className="min-w-0">
+              <p className="text-base sm:text-xl font-bold text-foreground font-mono leading-none">~50ms</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 leading-tight">latencia promedio</p>
             </div>
           </CardContent>
         </Card>
@@ -95,7 +95,7 @@ export function IdleState({ modelCount, onSuggestion }: IdleStateProps) {
       </Card>
 
       {/* Feature cards */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {FEATURES.map(({ icon: Icon, title, description }) => (
           <Card key={title} className="bg-card border-border">
             <CardContent className="p-4">

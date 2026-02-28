@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
-import { Activity, Search as SearchIcon, BarChart3, GitCompare } from "lucide-react"
+import { Activity, Search as SearchIcon, BarChart3, GitCompare, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SearchBar } from "@/components/search/search-bar"
@@ -24,7 +25,7 @@ function App() {
   const [topK, setTopK] = useState(10)
   const [healthy, setHealthy] = useState<boolean | null>(null)
   const [query, setQuery] = useState("")
-  const { status, data, error, search } = useSearch()
+  const { status, data, error, search, reset } = useSearch()
 
   useEffect(() => {
     if (defaultModel && !selectedModel) setSelectedModel(defaultModel)
@@ -43,6 +44,11 @@ function App() {
   const handleSuggestion = (q: string) => {
     setQuery(q)
     search(q, selectedModel, topK)
+  }
+
+  const handleReset = () => {
+    setQuery("")
+    reset()
   }
 
   return (
@@ -74,12 +80,26 @@ function App() {
         {/* Main content */}
         <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
           {/* Search */}
-          <SearchBar
-            value={query}
-            onChange={setQuery}
-            onSearch={handleSearch}
-            loading={status === "loading"}
-          />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3">
+            <div className="flex-1">
+              <SearchBar
+                value={query}
+                onChange={setQuery}
+                onSearch={handleSearch}
+                loading={status === "loading"}
+              />
+            </div>
+            {(status === "success" || status === "error") && (
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                className="h-12 shrink-0 gap-2 border-border text-muted-foreground hover:text-foreground"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Nueva búsqueda
+              </Button>
+            )}
+          </div>
 
           {/* Model + TopK selector */}
           <ModelSelector
