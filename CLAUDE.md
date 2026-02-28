@@ -194,10 +194,12 @@ Los filtros keyword de Qdrant son exact-match, así que la normalización es obl
 - **"Playa" solo**: resolver a "Playa del Carmen" solo si contexto Q. Roo
 - **Colonias sin estándar**: NO filtrar por keyword, dejar al embedding semántico
 
-### Indexes de ubicación en Qdrant
+### Indexes en Qdrant
 - `city` → keyword (exact match tras normalización)
 - `state` → keyword (exact match tras normalización)
 - `neighborhood` → text (full-text index para partial matching)
+- `address` → text (MULTILINGUAL tokenizer, min 2, max 30) — para MatchText de calles
+- `title` → text (MULTILINGUAL tokenizer, min 2, max 30) — para MatchText de keywords en título
 
 ---
 
@@ -220,16 +222,25 @@ LangGraph añade complejidad sin beneficio para este caso. Un endpoint FastAPI s
 - El modelo activo se configura via `.env` o parámetro en el endpoint
 - Esto permite A/B testing de calidad de resultados
 
-### Estrategia de búsqueda: Filtros primero, semántica después
+### Estrategia de búsqueda: must + should + semántica
 
 ```
 Query usuario
-    → Capa 1: Diccionario estático normaliza ubicaciones
+    → Capa 1: Diccionario estático normaliza ubicaciones (múltiples ciudades soportadas)
     → Capa 2: LLM parser extrae filtros + query semántico
-    → Qdrant pre-filtra por metadata (ciudad, recámaras, precio, tipo)
+       - cities[], neighborhoods[], property_types[] (listas para multi-valor)
+       - street (calle detectada en el query)
+    → Qdrant filtra con must + should:
+       - must: city (MatchAny), state, property_type (MatchAny), operation, rangos numéricos
+       - should: MatchText en address/title (street), MatchText en neighborhood/title (neighborhoods)
     → Búsqueda vectorial dense con query COMPLETO del usuario
-    → Retorna top-k propiedades
+    → Retorna top-k propiedades (should-matching priorizadas por Qdrant)
 ```
+
+**must vs should**:
+- **must**: filtros duros — la propiedad DEBE cumplir todos
+- **should**: filtros suaves — entre las que cumplen must, se priorizan las que cumplen algún should
+- Si solo hay should (sin must): al menos uno debe cumplirse
 
 ### Qdrant: Configuración de colecciones
 - **Una colección por modelo de embedding** (ej: `properties_openai_small`, `properties_openai_large`, `properties_gemini`)
@@ -237,7 +248,9 @@ Query usuario
 - **Payload indexes** (crear ANTES de subir datos):
   - `city` (keyword) — para filtrar por ciudad (normalizado)
   - `state` (keyword) — para filtrar por estado (normalizado)
-  - `neighborhood` (text) — full-text index para partial matching
+  - `neighborhood` (text) — full-text index para partial matching (should filter)
+  - `address` (text, MULTILINGUAL) — para MatchText de calles (should filter)
+  - `title` (text, MULTILINGUAL) — para MatchText de keywords en título (should filter)
   - `property_type` (keyword) — casa, departamento, terreno, etc.
   - `operation` (keyword) — sale, rent
   - `bedrooms` (integer) — número de recámaras
@@ -253,16 +266,15 @@ Query usuario
 
 ### Query parsing con Gemini Flash / GPT-4o-mini
 Usar structured output / function calling para extraer filtros del query.
-System prompt para el parser:
-```
-Eres un asistente de búsqueda inmobiliaria en México. Extrae filtros estructurados
-del query del usuario. Normaliza nombres de ciudades y estados a sus formas canónicas.
-Convierte expresiones de precio ("4 millones" → 4000000, "4 mdp" → 4000000).
-Mapea términos coloquiales: "recamaras"/"cuartos" → bedrooms,
-"depa" → departamento, "baños completos" → bathrooms.
-El campo semantic_query debe contener el query completo original del usuario
-para búsqueda vectorial.
-```
+
+**ParsedQuery soporta multi-valor**:
+- `cities: list[str]` — múltiples ciudades ("gdl, zapopan, tlajo")
+- `neighborhoods: list[str]` — múltiples colonias ("andares, puerta de hierro")
+- `property_types: list[str]` — múltiples tipos ("bodega o nave")
+- `street: str | None` — calle detectada ("calle alfonso nápoles")
+
+El LLM parser extrae listas cuando el usuario menciona múltiples valores separados por comas, "y", "o".
+El diccionario estático resuelve cada ciudad individualmente y las une en un solo MatchAny.
 
 ### Sparse vectors (BM25): Fase 5
 Los sparse vectors ayudan con keywords exactos que dense vectors pierden
@@ -281,9 +293,10 @@ Si se necesita en el futuro: Cohere Rerank 3.5 o BGE-reranker-v2-m3.
 
 1. **Fase 1 — Backend base** ✅: Proyecto uv, FastAPI, modelos Pydantic, embedding providers, Qdrant manager
 2. **Fase 2 — Ingesta** ✅: Excel loader, location normalizer, indexer, endpoint POST /ingest
-3. **Fase 3 — Búsqueda**: Location normalizer + LLM query parsing + búsqueda vectorial con filtros
-4. **Fase 4 — Frontend**: Playground web para probar búsquedas
+3. **Fase 3 — Búsqueda** ✅: LLM query parsing multi-valor + filtros must/should + MatchText en address/title + búsqueda vectorial
+4. **Fase 4 — Frontend** ✅: Playground React 19 + Vite + Shadcn/ui con gráfica de similitud
 5. **Fase 5 — Mejoras**: Sparse vectors BM25 + RRF fusion, reranking, paginación
+6. **Fase 6 — Deploy** ✅: Railway (backend) + Vercel (frontend) + Qdrant Cloud
 
 ---
 

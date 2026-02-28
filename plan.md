@@ -112,8 +112,12 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 - [x] Verificado: 8803 propiedades cargadas, states canonicalizados correctamente
 
 ### Fase 3 — Búsqueda ✅
-- [x] `search/query_parser.py`: Gemini Flash con structured output → ParsedQuery (city, state, type, bedrooms, bathrooms, price_min, price_max, operation, semantic_query)
-- [x] `search/searcher.py`: construir filtros Qdrant + vector search con query completo del usuario
+- [x] `search/query_parser.py`: Gemini Flash con structured output → ParsedQuery (cities[], neighborhoods[], property_types[], street, state, bedrooms, bathrooms, price, operation, semantic_query, clean_query)
+- [x] `search/searcher.py`: filtros must (hard) + should (soft MatchText) + vector search con query completo
+- [x] Multi-valor: cities[], neighborhoods[], property_types[] con MatchAny por unión de aliases
+- [x] Detección de calle (street) → MatchText en address y title como should filter
+- [x] TEXT indexes en address y title (MULTILINGUAL tokenizer) para búsqueda tokenizada
+- [x] Aliases faltantes: zapopan, tlajomulco/tlajo, tonalá, tlaquepaque, san pedro/spgg
 - [x] Endpoint POST `/search` con query en lenguaje natural, modelo y top_k
 - [x] SearchMetrics en respuesta: scores de similitud, filtros aplicados, tiempo de respuesta
 - [x] Query parser actualizado a `gemini-2.0-flash-preview` (gemini-3-flash-preview)
@@ -133,8 +137,8 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 - [ ] Paginación de resultados
 - [ ] Scalar quantization INT8 para escala
 
-### Fase 6 — Deploy (en progreso)
+### Fase 6 — Deploy ✅
 - [x] Soporte Qdrant Cloud: `QDRANT_URL` + `QDRANT_API_KEY` en config y QdrantManager
-- [ ] Backend en Railway (FastAPI + uv)
-- [ ] Frontend en Vercel (React + Vite)
-- [ ] Re-indexar 8803 propiedades en Qdrant Cloud
+- [x] Backend en Railway (FastAPI + uv)
+- [x] Frontend en Vercel (React + Vite)
+- [x] Re-indexar 8803 propiedades en Qdrant Cloud

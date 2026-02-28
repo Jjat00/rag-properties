@@ -15,18 +15,21 @@ Busca propiedades en lenguaje natural (ej: "casa de 4 habitaciones con 2 baños 
 ## Cómo funciona
 
 ```
-Query: "casa amplia con jardín en zona tranquila de Mérida, 3 recámaras"
+Query: "bodega o nave en gdl, zapopan, tlajo en calle alfonso nápoles"
     ↓
-1. Normalización: "Merida" → "Mérida" (diccionario estático)
+1. Normalización: "gdl"→["Guadalajara","Zapopan","Tlajomulco de Zúñiga"], "tlajo"→["Tlajomulco de Zúñiga"]
     ↓
-2. LLM Parser (Gemini 3 Flash): extrae city="Mérida", type="Casa", bedrooms=3
+2. LLM Parser (Gemini 3 Flash): extrae
+   cities=["Guadalajara","Zapopan","Tlajomulco"], property_types=["Bodega","Nave"],
+   street="Alfonso Nápoles"
     ↓
-3. Qdrant pre-filtra: ~200 casas de 3 recámaras en Mérida
+3. Filtros must + should en Qdrant:
+   must: city IN [...], property_type IN ["Bodega comercial","Nave industrial"]
+   should: address MATCH "Alfonso Nápoles", title MATCH "Alfonso Nápoles"
     ↓
 4. Vector search: embedding del query completo vs propiedades filtradas
-   "amplia con jardín zona tranquila" matchea títulos similares
     ↓
-5. Top-K: las propiedades más relevantes semánticamente
+5. Top-K: propiedades más relevantes (should-matching primero)
 ```
 
 ## Estructura
@@ -167,7 +170,9 @@ CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
 - **Una colección por modelo** — para A/B testing, consolidar después
 - **Embedding = Title primero** — mayor valor semántico, luego tipo/ubicación/atributos
 - **Query completo al embedding** — no solo el residuo post-filtros
-- **Direcciones NO en embedding** — ruido; solo en payload para mostrar
+- **Direcciones NO en embedding, SÍ indexadas como TEXT** — ruido para embeddings pero buscables via MatchText tokenizado
+- **Filtros must + should** — must para filtros duros (ciudad, tipo, precio), should para text-match suave (calle, colonia) que prioriza sin excluir
+- **Multi-valor en ParsedQuery** — cities[], neighborhoods[], property_types[] soportan queries con múltiples ubicaciones/tipos
 - **Normalización doble** — diccionario estático + LLM parser para ubicaciones MX
 - **Sparse BM25 en Fase 5** — beneficio marginal con filtros + dense; Qdrant lo hace server-side
 
@@ -177,7 +182,7 @@ Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
 
 - [x] **Fase 1** — Backend base: proyecto uv, modelos, embeddings multi-modelo, Qdrant manager, FastAPI
 - [x] **Fase 2** — Ingesta: Excel loader, location normalizer, indexer, endpoint POST /ingest (8,803 propiedades)
-- [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash + búsqueda semántica con filtros, endpoint POST /search
+- [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash + búsqueda semántica con filtros must/should, multi-ciudad/tipo/colonia, detección de calle
 - [x] **Fase 4** — Frontend: playground React 19 + Vite + Shadcn/ui con gráfica de similitud interactiva
 - [ ] **Fase 5** — Mejoras: sparse BM25 + RRF, reranking, paginación, quantization
 - [x] **Fase 6** — Deploy: Railway (backend) + Vercel (frontend) + Qdrant Cloud
