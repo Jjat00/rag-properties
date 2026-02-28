@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { SearchBar } from "@/components/search/search-bar"
 import { ModelSelector } from "@/components/search/model-selector"
 import { FilterChips } from "@/components/search/filter-chips"
+import { IdleState } from "@/components/search/idle-state"
 import { ResultsGrid } from "@/components/results/results-grid"
 import { LoadingSkeleton } from "@/components/results/loading-skeleton"
 import { ScoreGauge } from "@/components/analytics/score-gauge"
@@ -22,6 +23,7 @@ function App() {
   const [selectedModel, setSelectedModel] = useState("")
   const [topK, setTopK] = useState(10)
   const [healthy, setHealthy] = useState<boolean | null>(null)
+  const [query, setQuery] = useState("")
   const { status, data, error, search } = useSearch()
 
   useEffect(() => {
@@ -34,8 +36,13 @@ function App() {
       .catch(() => setHealthy(false))
   }, [])
 
-  const handleSearch = (query: string) => {
-    search(query, selectedModel, topK)
+  const handleSearch = (q: string) => {
+    search(q, selectedModel, topK)
+  }
+
+  const handleSuggestion = (q: string) => {
+    setQuery(q)
+    search(q, selectedModel, topK)
   }
 
   return (
@@ -67,7 +74,12 @@ function App() {
         {/* Main content */}
         <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
           {/* Search */}
-          <SearchBar onSearch={handleSearch} loading={status === "loading"} />
+          <SearchBar
+            value={query}
+            onChange={setQuery}
+            onSearch={handleSearch}
+            loading={status === "loading"}
+          />
 
           {/* Model + TopK selector */}
           <ModelSelector
@@ -130,13 +142,7 @@ function App() {
 
           {/* Idle state */}
           {status === "idle" && (
-            <div className="text-center py-20 text-muted-foreground">
-              <SearchIcon className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <p className="text-lg">Escribe una busqueda en lenguaje natural</p>
-              <p className="text-sm mt-1">
-                Ejemplo: "casa de 4 habitaciones con 2 banos en Cancun menos de 5 millones"
-              </p>
-            </div>
+            <IdleState modelCount={models.length} onSuggestion={handleSuggestion} />
           )}
         </main>
       </div>

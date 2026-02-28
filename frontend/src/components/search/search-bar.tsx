@@ -1,19 +1,19 @@
-import { useState, type FormEvent } from "react"
+import { type FormEvent } from "react"
 import { Search, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 interface SearchBarProps {
+  value: string
+  onChange: (v: string) => void
   onSearch: (query: string) => void
   loading: boolean
 }
 
-export function SearchBar({ onSearch, loading }: SearchBarProps) {
-  const [query, setQuery] = useState("")
-
+export function SearchBar({ value, onChange, onSearch, loading }: SearchBarProps) {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    const trimmed = query.trim()
+    const trimmed = value.trim()
     if (trimmed) onSearch(trimmed)
   }
 
@@ -27,9 +27,9 @@ export function SearchBar({ onSearch, loading }: SearchBarProps) {
         )}
         <Input
           type="text"
-          placeholder='Busca en lenguaje natural: "casa de 4 habitaciones con 2 banos en Cancun"'
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          placeholder='Busca en lenguaje natural: "casa de 4 habitaciones con 2 baños en Cancún"'
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           className={cn(
             "h-12 pl-12 pr-4 bg-card border-border rounded-lg text-foreground placeholder:text-muted-foreground",
             "focus-visible:ring-primary/50 focus-visible:border-primary/50",
@@ -38,7 +38,7 @@ export function SearchBar({ onSearch, loading }: SearchBarProps) {
         />
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Presiona Enter para buscar. Los filtros se extraen automaticamente del texto.
+        Presiona Enter para buscar. Los filtros se extraen automáticamente del texto.
       </p>
     </form>
   )
