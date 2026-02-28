@@ -29,14 +29,15 @@ function buildChips(f: ParsedQuery): Chip[] {
   const chips: Chip[] = []
 
   // Location — hard filters (azul)
-  if (f.city)  chips.push({ label: `Ciudad: ${f.city}`,  variant: "location" })
+  if (f.cities?.length)  chips.push({ label: `Ciudad: ${f.cities.join(", ")}`,  variant: "location" })
   if (f.state) chips.push({ label: `Estado: ${f.state}`, variant: "location" })
 
-  // Neighborhood is NOT a hard filter — shown as hint (morado)
-  if (f.neighborhood) chips.push({ label: `Zona: ${f.neighborhood}`, variant: "hint" })
+  // Neighborhood and street — soft filters (morado)
+  if (f.neighborhoods?.length) chips.push({ label: `Zona: ${f.neighborhoods.join(", ")}`, variant: "hint" })
+  if (f.street) chips.push({ label: `Calle: ${f.street}`, variant: "hint" })
 
   // Type / operation / condition — keyword filters (verde)
-  if (f.property_type) chips.push({ label: `Tipo: ${f.property_type}`, variant: "type" })
+  if (f.property_types?.length) chips.push({ label: `Tipo: ${f.property_types.join(", ")}`, variant: "type" })
   if (f.operation) {
     const op = f.operation === "sale" ? "Venta" : f.operation === "rent" ? "Renta" : f.operation
     chips.push({ label: `Operación: ${op}`, variant: "type" })

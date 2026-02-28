@@ -120,6 +120,12 @@ IMPORTANTE: El catálogo usa municipios, no siempre el nombre coloquial. \
 Escribe la ciudad TAL COMO EL USUARIO LA MENCIONA — el sistema la mapea internamente.
 NO intentes adivinar el municipio (Benito Juárez, Solidaridad, etc.).
 
+Si el usuario menciona MÚLTIPLES ciudades separadas por comas, "y", "o", etc., \
+extrae TODAS en la lista `cities`. Ejemplos:
+- "gdl, zapopan, tlajo" → cities=["Guadalajara", "Zapopan", "Tlajomulco"]
+- "cancún o playa" → cities=["Cancún", "Playa del Carmen"]
+- "monterrey y san pedro" → cities=["Monterrey", "San Pedro Garza García"]
+
 Ciudades comunes y sus variantes:
 - Cancu, cancun, Cancun → "Cancún"
 - Playa / Playa del carmen / PDC → "Playa del Carmen"
@@ -131,11 +137,41 @@ Ciudades comunes y sus variantes:
 - Merida / Merida → "Mérida"
 - Tuxtla / Tuxtla Gutiérrez → "Tuxtla Gutiérrez"
 - Oaxaca / Oaxaca de Juárez → "Oaxaca"
+- Zapopan → "Zapopan"
+- Tlajo / Tlajomulco → "Tlajomulco"
+- Tonala / Tonalá → "Tonalá"
+- San Pedro / SPGG → "San Pedro Garza García"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 5. COLONIAS Y CALLES CONOCIDAS → infiere neighborhood
+## 5. COLONIAS, CALLES Y MÚLTIPLES UBICACIONES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+### Múltiples colonias
+Si el usuario menciona MÚLTIPLES colonias separadas por comas, "y", "o", etc., \
+extrae TODAS en la lista `neighborhoods`. Ejemplos:
+- "andares, puerta de hierro o valle real" → neighborhoods=["Andares", "Puerta de Hierro", "Valle Real"]
+- "polanco o condesa" → neighborhoods=["Polanco", "Condesa"]
+- "providencia y chapalita" → neighborhoods=["Providencia", "Chapalita"]
+
+### Múltiples tipos de propiedad
+Si el usuario menciona MÚLTIPLES tipos separados por comas, "y", "o", etc., \
+extrae TODOS en la lista `property_types`. Ejemplos:
+- "bodega o nave" → property_types=["Bodega", "Nave"]
+- "casa o departamento" → property_types=["Casa", "Departamento"]
+- "terreno o local" → property_types=["Terreno", "Local"]
+
+### Calles específicas
+Si el usuario menciona una calle específica (nombre de calle, avenida, boulevard, etc.), \
+extráela en el campo `street`. Ejemplos:
+- "depa en la calle alfonso nápoles" → street="Alfonso Nápoles"
+- "casa en av illinois" → street="Illinois"
+- "propiedad en calle mérida" → street="Mérida"
+- "propiedad en cayaco" → street="Cayaco"
+
+IMPORTANTE: `street` es el nombre de la calle TAL CUAL lo menciona el usuario. \
+No confundir con ciudad o colonia.
+
+### Colonias y landmarks conocidos → infiere neighborhood
 Si el usuario menciona una calle o landmark, infiere la colonia cuando sea obvio:
 
 ### CDMX
@@ -221,11 +257,12 @@ Interpreta el INTENT aunque el query sea muy informal, tenga typos o sea convers
 class ParsedQuery(BaseModel):
     """Structured filters extracted from a user search query."""
 
-    city: str | None = None
+    cities: list[str] = []
     state: str | None = None
-    neighborhood: str | None = None
-    property_type: str | None = None
+    neighborhoods: list[str] = []
+    property_types: list[str] = []
     operation: str | None = None
+    street: str | None = None
     min_bedrooms: int | None = None
     max_bedrooms: int | None = None
     min_bathrooms: int | None = None

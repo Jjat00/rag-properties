@@ -137,6 +137,18 @@ CITY_ALIASES: dict[str, list[str]] = {
     "oaxaca": ["Oaxaca de Juárez"],
     # Tabasco
     "villahermosa": ["Villahermosa", "Centro"],
+    # Jalisco — individual cities
+    "zapopan": ["Zapopan"],
+    "tlajomulco": ["Tlajomulco de Zúñiga"],
+    "tlajo": ["Tlajomulco de Zúñiga"],
+    "tonalá": ["Tonalá"],
+    "tonala": ["Tonalá"],
+    "tlaquepaque": ["Tlaquepaque", "San Pedro Tlaquepaque"],
+    # Nuevo León — individual cities
+    "san pedro garza garcía": ["San Pedro Garza García"],
+    "san pedro garza garcia": ["San Pedro Garza García"],
+    "san pedro": ["San Pedro Garza García"],
+    "spgg": ["San Pedro Garza García"],
 }
 
 

@@ -1,9 +1,10 @@
 export interface ParsedQuery {
-  city: string | null;
+  cities: string[];
   state: string | null;
-  neighborhood: string | null;
-  property_type: string | null;
+  neighborhoods: string[];
+  property_types: string[];
   operation: string | null;
+  street: string | null;
   min_bedrooms: number | null;
   max_bedrooms: number | null;
   min_bathrooms: number | null;

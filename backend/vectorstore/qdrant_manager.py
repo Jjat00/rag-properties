@@ -33,6 +33,18 @@ PAYLOAD_INDEXES: dict[str, PayloadSchemaType | TextIndexParams] = {
     "roofed_surface": PayloadSchemaType.FLOAT,
     "condition": PayloadSchemaType.KEYWORD,
     "currency": PayloadSchemaType.KEYWORD,
+    "address": TextIndexParams(
+        type="text",
+        tokenizer=TokenizerType.MULTILINGUAL,
+        min_token_len=2,
+        max_token_len=30,
+    ),
+    "title": TextIndexParams(
+        type="text",
+        tokenizer=TokenizerType.MULTILINGUAL,
+        min_token_len=2,
+        max_token_len=30,
+    ),
 }
 
 _UPSERT_BATCH_SIZE = 100

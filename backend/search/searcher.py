@@ -123,76 +123,96 @@ class SearchResult(BaseModel):
     metrics: SearchMetrics = SearchMetrics()
 
 
-def _normalize_parsed_locations(parsed: ParsedQuery) -> tuple[ParsedQuery, list[str] | None]:
+def _normalize_parsed_locations(parsed: ParsedQuery) -> tuple[ParsedQuery, list[str]]:
     """Apply static alias resolution to the LLM-extracted locations.
 
-    Returns the updated ParsedQuery and an optional list of city variants for MatchAny.
+    Returns the updated ParsedQuery and a merged list of all city variants for MatchAny.
     """
-    city_variants: list[str] | None = None
     if parsed.state:
         resolved = resolve_state_alias(parsed.state)
         if resolved:
             parsed.state = resolved
-    if parsed.city:
-        city_variants = resolve_city_alias(parsed.city)
-    return parsed, city_variants
+
+    # Resolve each city through aliases → merge into a single deduplicated list
+    all_city_variants: list[str] = []
+    for city in parsed.cities:
+        resolved = resolve_city_alias(city)
+        if resolved:
+            all_city_variants.extend(resolved)
+        else:
+            all_city_variants.append(city)
+    # Deduplicate preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for v in all_city_variants:
+        if v not in seen:
+            seen.add(v)
+            deduped.append(v)
+    return parsed, deduped
 
 
-def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -> Filter | None:
-    """Build a Qdrant Filter from the parsed query fields."""
-    conditions: list[FieldCondition] = []
+def _build_filter(
+    parsed: ParsedQuery,
+    city_variants: list[str] | None = None,
+) -> Filter | None:
+    """Build a Qdrant Filter from the parsed query fields.
 
-    # City: use MatchAny if aliases resolved to multiple values
+    Uses must for hard filters and should for soft text-match filters
+    (street, neighborhoods) that boost but don't exclude.
+    """
+    must_conditions: list[FieldCondition] = []
+    should_conditions: list[FieldCondition] = []
+
+    # --- MUST conditions (hard filters) ---
+
+    # Cities: MatchAny with the union of all resolved variants
     if city_variants:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(key="city", match=MatchAny(any=city_variants))
         )
-    elif parsed.city:
-        conditions.append(
-            FieldCondition(key="city", match=MatchValue(value=parsed.city))
-        )
+
     if parsed.state:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(key="state", match=MatchValue(value=parsed.state))
         )
-    if parsed.property_type:
-        type_variants = PROPERTY_TYPE_ALIASES.get(parsed.property_type)
-        if type_variants:
-            conditions.append(
-                FieldCondition(key="property_type", match=MatchAny(any=type_variants))
-            )
-        else:
-            conditions.append(
-                FieldCondition(
-                    key="property_type", match=MatchValue(value=parsed.property_type)
-                )
-            )
+
+    # Property types: union all aliases for each type mentioned
+    if parsed.property_types:
+        all_type_variants: list[str] = []
+        for pt in parsed.property_types:
+            type_variants = PROPERTY_TYPE_ALIASES.get(pt)
+            if type_variants:
+                all_type_variants.extend(type_variants)
+            else:
+                all_type_variants.append(pt)
+        # Deduplicate
+        all_type_variants = list(dict.fromkeys(all_type_variants))
+        must_conditions.append(
+            FieldCondition(key="property_type", match=MatchAny(any=all_type_variants))
+        )
+
     if parsed.operation:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(key="operation", match=MatchValue(value=parsed.operation))
         )
     if parsed.condition:
         cond_variants = CONDITION_ALIASES.get(parsed.condition)
         if cond_variants:
-            conditions.append(
+            must_conditions.append(
                 FieldCondition(key="condition", match=MatchAny(any=cond_variants))
             )
         else:
-            conditions.append(
+            must_conditions.append(
                 FieldCondition(key="condition", match=MatchValue(value=parsed.condition))
             )
     if parsed.currency:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(key="currency", match=MatchValue(value=parsed.currency))
         )
 
-    # Neighborhood: NOT used as a hard filter.
-    # Users mix colonias, landmarks, addresses and zones — too unreliable for exact match.
-    # The embedding already contains neighborhood text, so vector search handles it.
-
     # Range filters for numeric fields
     if parsed.min_bedrooms is not None or parsed.max_bedrooms is not None:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(
                 key="bedrooms",
                 range=Range(
@@ -202,7 +222,7 @@ def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -
             )
         )
     if parsed.min_bathrooms is not None or parsed.max_bathrooms is not None:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(
                 key="bathrooms",
                 range=Range(
@@ -212,7 +232,7 @@ def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -
             )
         )
     if parsed.min_price is not None or parsed.max_price is not None:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(
                 key="price",
                 range=Range(
@@ -222,7 +242,7 @@ def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -
             )
         )
     if parsed.min_surface is not None or parsed.max_surface is not None:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(
                 key="surface",
                 range=Range(
@@ -232,7 +252,7 @@ def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -
             )
         )
     if parsed.min_roofed_surface is not None or parsed.max_roofed_surface is not None:
-        conditions.append(
+        must_conditions.append(
             FieldCondition(
                 key="roofed_surface",
                 range=Range(
@@ -242,9 +262,37 @@ def _build_filter(parsed: ParsedQuery, city_variants: list[str] | None = None) -
             )
         )
 
-    if not conditions:
+    # --- SHOULD conditions (soft text-match filters) ---
+
+    # Street: MatchText on address and title
+    if parsed.street:
+        should_conditions.append(
+            FieldCondition(key="address", match=MatchText(text=parsed.street))
+        )
+        should_conditions.append(
+            FieldCondition(key="title", match=MatchText(text=parsed.street))
+        )
+
+    # Neighborhoods: MatchText on neighborhood and title for each
+    for nb in parsed.neighborhoods:
+        should_conditions.append(
+            FieldCondition(key="neighborhood", match=MatchText(text=nb))
+        )
+        should_conditions.append(
+            FieldCondition(key="title", match=MatchText(text=nb))
+        )
+
+    if not must_conditions and not should_conditions:
         return None
-    return Filter(must=conditions)
+
+    # Build filter combining must and should
+    # When must + should: Qdrant requires all must AND at least one should
+    # When only should: requires at least one should
+    # When only must: just the must conditions
+    return Filter(
+        must=must_conditions if must_conditions else None,
+        should=should_conditions if should_conditions else None,
+    )
 
 
 class Searcher:
