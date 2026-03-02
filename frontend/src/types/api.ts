@@ -57,6 +57,16 @@ export interface SearchMetrics {
   score_avg: number;
 }
 
+export interface FacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface DisambiguationInfo {
+  field: string;
+  buckets: FacetBucket[];
+}
+
 export interface SearchResult {
   query: string;
   parsed_filters: ParsedQuery;
@@ -64,6 +74,7 @@ export interface SearchResult {
   results: PropertyResult[];
   total: number;
   metrics: SearchMetrics;
+  disambiguation: DisambiguationInfo[];
 }
 
 export interface EmbeddingModelInfo {

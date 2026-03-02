@@ -1,5 +1,6 @@
 """Semantic search engine: builds Qdrant filters from parsed queries and runs vector search."""
 
+import asyncio
 import logging
 import time
 
@@ -112,6 +113,20 @@ class SearchMetrics(BaseModel):
     score_avg: float = 0.0
 
 
+class FacetBucket(BaseModel):
+    """A single value and its count from a faceted field."""
+
+    value: str
+    count: int
+
+
+class DisambiguationInfo(BaseModel):
+    """Breakdown of ambiguous filters by actual values in the catalog."""
+
+    field: str
+    buckets: list[FacetBucket]
+
+
 class SearchResult(BaseModel):
     """Full search response including parsed filters and results."""
 
@@ -121,6 +136,7 @@ class SearchResult(BaseModel):
     results: list[PropertyResult]
     total: int
     metrics: SearchMetrics = SearchMetrics()
+    disambiguation: list[DisambiguationInfo] = []
 
 
 def _normalize_parsed_locations(parsed: ParsedQuery) -> tuple[ParsedQuery, list[str]]:
@@ -151,17 +167,28 @@ def _normalize_parsed_locations(parsed: ParsedQuery) -> tuple[ParsedQuery, list[
     return parsed, deduped
 
 
+class _FilterMeta:
+    """Tracks which fields expanded to multiple values (candidates for disambiguation)."""
+
+    def __init__(self) -> None:
+        self.expanded_type_variants: list[str] = []
+        self.expanded_city_variants: list[str] = []
+
+
 def _build_filter(
     parsed: ParsedQuery,
     city_variants: list[str] | None = None,
-) -> Filter | None:
+) -> tuple[Filter | None, _FilterMeta]:
     """Build a Qdrant Filter from the parsed query fields.
 
     Uses must for hard filters and should for soft text-match filters
     (street, neighborhoods) that boost but don't exclude.
+
+    Returns the filter and metadata about which fields expanded to multiple values.
     """
     must_conditions: list[FieldCondition] = []
     should_conditions: list[FieldCondition] = []
+    meta = _FilterMeta()
 
     # --- MUST conditions (hard filters) ---
 
@@ -170,6 +197,8 @@ def _build_filter(
         must_conditions.append(
             FieldCondition(key="city", match=MatchAny(any=city_variants))
         )
+        if len(city_variants) > 1:
+            meta.expanded_city_variants = city_variants
 
     if parsed.state:
         must_conditions.append(
@@ -190,6 +219,8 @@ def _build_filter(
         must_conditions.append(
             FieldCondition(key="property_type", match=MatchAny(any=all_type_variants))
         )
+        if len(all_type_variants) > 1:
+            meta.expanded_type_variants = all_type_variants
 
     if parsed.operation:
         must_conditions.append(
@@ -283,7 +314,7 @@ def _build_filter(
         )
 
     if not must_conditions and not should_conditions:
-        return None
+        return None, meta
 
     # Build filter combining must and should
     # When must + should: Qdrant requires all must AND at least one should
@@ -292,7 +323,7 @@ def _build_filter(
     return Filter(
         must=must_conditions if must_conditions else None,
         should=should_conditions if should_conditions else None,
-    )
+    ), meta
 
 
 class Searcher:
@@ -308,6 +339,45 @@ class Searcher:
         self._provider = provider
         self._top_k = top_k
 
+    async def _facet_field(
+        self,
+        field: str,
+        variants: list[str],
+        base_filter: Filter | None,
+    ) -> DisambiguationInfo | None:
+        """Count occurrences per value of a field using Qdrant count().
+
+        Runs one count() call per variant in parallel and returns a DisambiguationInfo
+        with only non-zero buckets. Returns None if fewer than 2 buckets have results.
+        """
+        async def _count_value(value: str) -> FacetBucket:
+            value_condition = FieldCondition(key=field, match=MatchValue(value=value))
+            # Combine with existing base filter must conditions
+            must = list(base_filter.must) if base_filter and base_filter.must else []
+            # Remove the original MatchAny for this field (we're counting per value)
+            must = [c for c in must if not (isinstance(c, FieldCondition) and c.key == field)]
+            must.append(value_condition)
+            count_filter = Filter(
+                must=must,
+                should=base_filter.should if base_filter and base_filter.should else None,
+            )
+            result = await self._client.count(
+                collection_name=self._provider.collection_name,
+                count_filter=count_filter,
+                exact=False,
+            )
+            return FacetBucket(value=value, count=result.count)
+
+        buckets = await asyncio.gather(*[_count_value(v) for v in variants])
+        non_zero = [b for b in buckets if b.count > 0]
+
+        if len(non_zero) < 2:
+            return None
+
+        # Sort by count descending
+        non_zero.sort(key=lambda b: b.count, reverse=True)
+        return DisambiguationInfo(field=field, buckets=non_zero)
+
     async def search(
         self,
         query: str,
@@ -315,7 +385,7 @@ class Searcher:
         top_k: int | None = None,
         parse_time_ms: float = 0.0,
     ) -> SearchResult:
-        """Execute the full search pipeline: normalize → filter → embed → query."""
+        """Execute the full search pipeline: normalize → filter → embed → query → disambiguate."""
         total_start = time.perf_counter()
         k = top_k or self._top_k
 
@@ -323,7 +393,7 @@ class Searcher:
         parsed, city_variants = _normalize_parsed_locations(parsed)
 
         # Build Qdrant filter
-        qdrant_filter = _build_filter(parsed, city_variants)
+        qdrant_filter, filter_meta = _build_filter(parsed, city_variants)
         filters_applied = qdrant_filter is not None
 
         if filters_applied:
@@ -349,6 +419,21 @@ class Searcher:
             with_payload=True,
         )
         search_time_ms = (time.perf_counter() - search_start) * 1000
+
+        # Disambiguation: facet ambiguous fields in parallel
+        disambiguation: list[DisambiguationInfo] = []
+        facet_tasks = []
+        if filter_meta.expanded_type_variants:
+            facet_tasks.append(
+                self._facet_field("property_type", filter_meta.expanded_type_variants, qdrant_filter)
+            )
+        if filter_meta.expanded_city_variants:
+            facet_tasks.append(
+                self._facet_field("city", filter_meta.expanded_city_variants, qdrant_filter)
+            )
+        if facet_tasks:
+            facet_results = await asyncio.gather(*facet_tasks)
+            disambiguation = [r for r in facet_results if r is not None]
 
         # Format results
         properties: list[PropertyResult] = []
@@ -403,4 +488,5 @@ class Searcher:
             results=properties,
             total=len(properties),
             metrics=metrics,
+            disambiguation=disambiguation,
         )

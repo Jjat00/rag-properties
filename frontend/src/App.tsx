@@ -25,6 +25,7 @@ function App() {
   const [topK, setTopK] = useState(10)
   const [healthy, setHealthy] = useState<boolean | null>(null)
   const [query, setQuery] = useState("")
+  const [activeDisambig, setActiveDisambig] = useState<Record<string, string>>({})
   const { status, data, error, search, reset } = useSearch()
 
   useEffect(() => {
@@ -38,18 +39,36 @@ function App() {
   }, [])
 
   const handleSearch = (q: string) => {
+    setActiveDisambig({})
     search(q, selectedModel, topK)
   }
 
   const handleSuggestion = (q: string) => {
     setQuery(q)
+    setActiveDisambig({})
     search(q, selectedModel, topK)
   }
 
   const handleReset = () => {
     setQuery("")
+    setActiveDisambig({})
     reset()
   }
+
+  const handleDisambigClick = (field: string, value: string) => {
+    setActiveDisambig(prev =>
+      prev[field] === value ? { ...prev, [field]: "" } : { ...prev, [field]: value }
+    )
+  }
+
+  const filteredResults = data?.results.filter(r => {
+    for (const [field, value] of Object.entries(activeDisambig)) {
+      if (!value) continue
+      const fieldKey = field as keyof typeof r
+      if (r[fieldKey] !== value) return false
+    }
+    return true
+  }) ?? []
 
   return (
     <TooltipProvider>
@@ -111,7 +130,15 @@ function App() {
           />
 
           {/* Filter chips */}
-          {data && <FilterChips filters={data.parsed_filters} />}
+          {data && (
+            <FilterChips
+              filters={data.parsed_filters}
+              results={data.results}
+              disambiguation={data.disambiguation}
+              activeDisambig={activeDisambig}
+              onDisambigClick={handleDisambigClick}
+            />
+          )}
 
           {/* Error */}
           {error && (
@@ -129,7 +156,7 @@ function App() {
               <TabsList className="bg-card border border-border">
                 <TabsTrigger value="results" className="gap-1.5">
                   <SearchIcon className="h-3.5 w-3.5" />
-                  Resultados ({data.total})
+                  Resultados ({filteredResults.length}{filteredResults.length !== data.total ? ` de ${data.total}` : ""})
                 </TabsTrigger>
                 <TabsTrigger value="analytics" className="gap-1.5">
                   <BarChart3 className="h-3.5 w-3.5" />
@@ -142,7 +169,7 @@ function App() {
               </TabsList>
 
               <TabsContent value="results" className="mt-4">
-                <ResultsGrid results={data.results} />
+                <ResultsGrid results={filteredResults} />
               </TabsContent>
 
               <TabsContent value="analytics" className="mt-4 space-y-6">
