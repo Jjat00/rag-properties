@@ -88,20 +88,21 @@ Mapeo:
 - "X m²" sin calificador → surface (campo más común en búsquedas)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 3. ESTADOS DE MÉXICO
+## 3. ESTADOS DE MÉXICO (del catálogo)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Valores canónicos del catálogo:
-Quintana Roo, Yucatán, Ciudad de México, Jalisco, Nuevo León, Edo. de México, \
-Puebla, Guerrero, Nayarit, Baja California Sur, Querétaro, Oaxaca, Morelos, \
-Guanajuato, Veracruz, Tabasco, Chihuahua, Colima, Sinaloa, Sonora, Tamaulipas, \
-Michoacán, Campeche, Chiapas, Aguascalientes, Coahuila, San Luis Potosí, \
-Hidalgo, Baja California, Durango, Tlaxcala, Zacatecas.
+Valores EXACTOS en el catálogo (ordenados por cantidad de propiedades):
+Ciudad de México (4468), Edo. de México (1829), Jalisco (754), Sinaloa (380), \
+Quintana Roo (296), Yucatán (199), Querétaro (171), Morelos (157), Nayarit (87), \
+Guerrero (60), Baja California Sur (52), Tabasco (46), Puebla (38), Oaxaca (34), \
+Hidalgo (28), Guanajuato (27), San Luis Potosí (26), Nuevo León (19), Veracruz (17), \
+Michoacán (12), Coahuila (5), Tlaxcala (4), Durango (3), Tamaulipas (2), \
+Aguascalientes (2), Baja California (1), Sonora (1).
 
-Abreviaciones y variantes:
+Abreviaciones y variantes del usuario:
 - CDMX / DF / D.F. / Distrito Federal → "Ciudad de México"
-- Edomex / EdoMex / Edo Mex / Estado de México / Estado de Mexico → "Edo. de México"
-- Q. Roo / QRoo / Q Roo / Quintana roo → "Quintana Roo"
+- Edomex / EdoMex / Edo Mex / Estado de México → "Edo. de México"
+- Q. Roo / QRoo / Quintana roo → "Quintana Roo"
 - NL / Nuevo leon → "Nuevo León"
 - BCS / Baja Sur → "Baja California Sur"
 - BC / Baja Norte → "Baja California"
@@ -113,106 +114,127 @@ Abreviaciones y variantes:
 - Mich → "Michoacán"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 4. CIUDADES — escribe como el usuario, el sistema resuelve municipios
+## 4. CIUDADES DEL CATÁLOGO (municipios/alcaldías)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-IMPORTANTE: El catálogo usa municipios, no siempre el nombre coloquial. \
-Escribe la ciudad TAL COMO EL USUARIO LA MENCIONA — el sistema la mapea internamente.
-NO intentes adivinar el municipio (Benito Juárez, Solidaridad, etc.).
+IMPORTANTE: El catálogo usa nombres oficiales de municipios/alcaldías, NO nombres coloquiales. \
+Escribe la ciudad TAL COMO EL USUARIO LA MENCIONA — el sistema la mapea internamente a los \
+municipios reales. NO intentes adivinar el municipio.
 
-Si el usuario menciona MÚLTIPLES ciudades separadas por comas, "y", "o", etc., \
-extrae TODAS en la lista `cities`. Ejemplos:
+Municipios más frecuentes en el catálogo:
+Miguel Hidalgo (1129), Cuauhtémoc (935), Huixquilucan (786), Benito Juárez (651), \
+Alvaro Obregón (646), Cuajimalpa de Morelos (524), Mazatlán (375), Zapopan (318), \
+Naucalpan de Juárez (258), Tlalpan (170), Guadalajara (168), Tulum (138), Mérida (128), \
+Coyoacán (124), Querétaro (112), Tlajomulco de Zúñiga (108), Lerma (106), \
+Atizapán de Zaragoza (97), Metepec (86), Bahía de Banderas (80), Toluca (75), \
+Valle de Bravo (68), Cuernavaca (68), Acapulco de Juárez (56), Cancún (49), \
+Los Cabos (46), Puerto Vallarta (40), Solidaridad (34), San Pedro Tlaquepaque (24), \
+San Luis Potosí (22), Villahermosa (17), Santa María Huatulco (17).
+
+Si el usuario menciona MÚLTIPLES ciudades → extrae TODAS en `cities`:
 - "gdl, zapopan, tlajo" → cities=["Guadalajara", "Zapopan", "Tlajomulco"]
 - "cancún o playa" → cities=["Cancún", "Playa del Carmen"]
 - "monterrey y san pedro" → cities=["Monterrey", "San Pedro Garza García"]
 
-Ciudades comunes y sus variantes:
-- Cancu, cancun, Cancun → "Cancún"
-- Playa / Playa del carmen / PDC → "Playa del Carmen"
-- PV / Vallarta / Pvallarta → "Puerto Vallarta"
-- GDL / Guada / Guadalajara → "Guadalajara"
+Variantes coloquiales (el sistema las mapea a municipios reales):
+- Cancu / cancun → "Cancún"
+- Playa / PDC → "Playa del Carmen"
+- PV / Vallarta → "Puerto Vallarta"
+- GDL / Guada → "Guadalajara"
 - MTY / Mty / Regio → "Monterrey"
-- Los Cabos / Cabos / Cabo → "Los Cabos"
-- Maz / Mzln → "Mazatlán"
-- Merida / Merida → "Mérida"
-- Tuxtla / Tuxtla Gutiérrez → "Tuxtla Gutiérrez"
-- Oaxaca / Oaxaca de Juárez → "Oaxaca"
+- Los Cabos / Cabo → "Los Cabos"
+- Maz → "Mazatlán"
+- Merida → "Mérida"
 - Zapopan → "Zapopan"
 - Tlajo / Tlajomulco → "Tlajomulco"
-- Tonala / Tonalá → "Tonalá"
 - San Pedro / SPGG → "San Pedro Garza García"
+- Satélite / Ciudad Satélite → "Naucalpan de Juárez"
+- Huatulco → "Santa María Huatulco"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## 5. COLONIAS, CALLES Y MÚLTIPLES UBICACIONES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+### Colonias del catálogo (top 80 por frecuencia)
+Estos nombres son COLONIAS reales en la base de datos. Cuando el usuario mencione \
+uno de estos nombres, extráelo en `neighborhoods`:
+Bosque Real (250), Polanco (246), Roma Norte (222), Lomas de Tecamachalco (155), \
+Juárez (131), Tulum (127), Lomas de Chapultepec (119), Hacienda de las Palmas (118), \
+Bosque de las Lomas (106), Bosques de las Lomas (100), Fraccionamiento Marina Mazatlán (90), \
+Cuauhtémoc (88), Lomas Country Club (86), Granada (83), Santa Fe (79), Cancún (78), \
+Tabacalera (78), Paseo de las Lomas (73), Polanco V Sección (72), Lomas del Chamizal (72), \
+Jesús del Monte (71), Los Alpes (70), San Rafael (70), Hipódromo (69), \
+Santa Fe Cuajimalpa (68), Ampliación Granada (68), Anzures (67), \
+Lomas de Vista Hermosa (63), Del Valle Centro (60), Jardines del Pedregal (57), \
+Contadero (55), Fraccionamiento Sábalo Cerritos (54), Centro (52), \
+Club de Golf los Encinos (52), Bosques de las Palmas (51), Roma Sur (50), \
+Hipódromo Condesa (47), Portales Norte (47), Las Cañadas (46), Interlomas (45), \
+Lomas Altas (45), El Yaqui (44), Del Valle Norte (40), Santa María la Ribera (39), \
+Fraccionamiento Telleria (37), Santa Fe La Loma (36), San Jerónimo Lídice (36), \
+Lomas de Sotelo (34), San Pedro de los Pinos (33), Fuentes del Pedregal (33), \
+Narvarte Oriente (33), Parques de la Herradura (32), Anáhuac I Sección (31), \
+Playa del Carmen (31), Polanco IV Sección (30), Polanco I Sección (30), \
+San José Insurgentes (29), Narvarte Poniente (29), Del Valle Sur (28), Las Águilas (28), \
+Avándaro (27), Nápoles (26), Polanco III Sección (25), San Mateo Tlaltenango (24), \
+Cuajimalpa (24), Portales Sur (24), Juriquilla (24), San Agustín (24), \
+Temozón Norte (23), Condesa (23), Lomas de Santa Fe (23), Acacias (23), \
+Doctores (22), Ferrocarrilera (22), Bosques de la Herradura (22), \
+San Bartolo Ameyalco (21), Lomas de Bezares (21), Flamingo (21).
+
+NOTA: "Polanco" incluye sub-secciones (I, III, IV, V). Si el usuario dice solo \
+"Polanco", extrae neighborhoods=["Polanco"]. Si dice "Polanco V", extrae \
+neighborhoods=["Polanco V Sección"].
+
 ### Múltiples colonias
-Si el usuario menciona MÚLTIPLES colonias separadas por comas, "y", "o", etc., \
-extrae TODAS en la lista `neighborhoods`. Ejemplos:
-- "andares, puerta de hierro o valle real" → neighborhoods=["Andares", "Puerta de Hierro", "Valle Real"]
+Si el usuario menciona MÚLTIPLES colonias → extrae TODAS en `neighborhoods`:
 - "polanco o condesa" → neighborhoods=["Polanco", "Condesa"]
-- "providencia y chapalita" → neighborhoods=["Providencia", "Chapalita"]
+- "roma norte y roma sur" → neighborhoods=["Roma Norte", "Roma Sur"]
+- "bosque real o lomas" → neighborhoods=["Bosque Real", "Lomas de Chapultepec"]
 
 ### Múltiples tipos de propiedad
-Si el usuario menciona MÚLTIPLES tipos separados por comas, "y", "o", etc., \
-extrae TODOS en la lista `property_types`. Ejemplos:
+Si el usuario menciona MÚLTIPLES tipos → extrae TODOS en `property_types`:
 - "bodega o nave" → property_types=["Bodega", "Nave"]
 - "casa o departamento" → property_types=["Casa", "Departamento"]
 - "terreno o local" → property_types=["Terreno", "Local"]
 
-### Calles específicas
-Si el usuario menciona una calle específica (nombre de calle, avenida, boulevard, etc.), \
-extráela en el campo `street`. Ejemplos:
-- "depa en la calle alfonso nápoles" → street="Alfonso Nápoles"
-- "casa en av illinois" → street="Illinois"
-- "propiedad en calle mérida" → street="Mérida"
-- "propiedad en cayaco" → street="Cayaco"
+### Calles y cómo distinguirlas de colonias
+El catálogo tiene 5,846 calles únicas. NO están listadas aquí — son demasiadas. \
+La regla es:
 
-IMPORTANTE: `street` es el nombre de la calle TAL CUAL lo menciona el usuario. \
-No confundir con ciudad o colonia.
+**Si el nombre que menciona el usuario ESTÁ en la lista de colonias de arriba → neighborhoods.** \
+**Si el nombre NO está en la lista de colonias → es una calle → street.**
 
-### Colonias y landmarks conocidos → infiere neighborhood
-Si el usuario menciona una calle o landmark, infiere la colonia cuando sea obvio:
+Ejemplos de calles frecuentes en el catálogo (NO son colonias):
+Illinois, Leibnitz, Guillermo González Camarena, Comercio, Salamanca, Rubén Darío, \
+Hamburgo, Bucareli, Ingenieros Militares, Lago Andromaco, James Sullivan, Viena, \
+Insurgentes, Paseo de la Reforma, Masaryk, Horacio, Dumas, Oscar Wilde, Ámsterdam, \
+Álvaro Obregón, Orizaba, Tamaulipas, López Cotilla, Popocatépetl, Querétaro, \
+Alfonso Nápoles, Miguel de Cervantes Saavedra, Adolfo López Mateos, Mariano Escobedo.
 
-### CDMX
-- Dumas / Alejandro Dumas / Horacio / Masaryk / Presidente Masaryk / Oscar Wilde → neighborhood="Polanco"
-- Reforma / Paseo de la Reforma (sin más contexto) → neighborhood="Juárez"
-- Condesa / Parque México / Tamaulipas / Ámsterdam → neighborhood="Condesa"
-- Roma / Álvaro Obregón / Orizaba / Sonora → neighborhood="Roma Norte"
-- Coyoacán / Viveros / Francisco Sosa → neighborhood="Coyoacán"
-- Santa Fe / Centro Santa Fe → neighborhood="Santa Fe"
-- Lomas / Lomas de Chapultepec / Virreyes → neighborhood="Lomas de Chapultepec"
-- Interlomas → neighborhood="Interlomas"
-- San Ángel / Altavista → neighborhood="San Ángel"
-- Del Valle → neighborhood="Del Valle"
-- Nápoles / Insurgentes Sur (zona) → neighborhood="Nápoles"
-- Satélite / Ciudad Satélite → city="Naucalpan de Juárez"
-- Pedregal → neighborhood="Pedregal"
-- Tepito → neighborhood="Tepito"
-- Doctores → neighborhood="Doctores"
-- Xochimilco → city="Xochimilco"
-- Tlalpan → city="Tlalpan"
-- Coyoacán (zona amplia) → city="Coyoacán"
+NOMBRES COMPUESTOS: Muchas calles llevan nombres de personas que contienen palabras \
+que coinciden con colonias. "Alfonso Nápoles" es una CALLE (Av. Alfonso Nápoles Gandara), \
+NO es "calle Alfonso" en colonia "Nápoles". Otros ejemplos: "Gonzalez Camarena", \
+"Cervantes Saavedra", "López Mateos". Cuando el usuario dice un nombre compuesto, \
+extrae TODO el nombre como `street`. NUNCA separar en street + neighborhood.
 
-### Guadalajara
-- Zapopan / Andares → city="Zapopan"
-- Providencia / López Cotilla → neighborhood="Providencia"
-- Chapalita → neighborhood="Chapalita"
-- Tlaquepaque → city="Tlaquepaque"
+Ejemplos de extracción:
+- "depa en Illinois" → street="Illinois", neighborhoods=[] (NO es colonia)
+- "oficina en la alfonso nápoles" → street="Alfonso Nápoles", neighborhoods=[] (nombre compuesto de calle)
+- "casa en Polanco" → neighborhoods=["Polanco"], street=null (SÍ es colonia)
+- "oficina en Masaryk" → street="Masaryk", neighborhoods=[] (NO es colonia)
+- "depa en Masaryk en Polanco" → street="Masaryk", neighborhoods=["Polanco"]
+- "casa en Bosque Real" → neighborhoods=["Bosque Real"] (SÍ es colonia, 250 propiedades)
+- "casa en Leibnitz" → street="Leibnitz", neighborhoods=[] (NO es colonia)
+- "depa en Roma Norte" → neighborhoods=["Roma Norte"] (SÍ es colonia)
+- "depa en Hamburgo" → street="Hamburgo", neighborhoods=[] (NO es colonia)
+- "depa en Condesa" → neighborhoods=["Condesa"] (SÍ es colonia)
 
-### Monterrey
-- San Pedro / San Pedro Garza García / SPGG / Vasconcelos → city="San Pedro Garza García"
-- Valle / Cumbres / Cumbres de San Ángel → neighborhood correspondiente
-- Obispado → neighborhood="Obispado"
-
-### Cancún / Q. Roo
-- Zona Hotelera / ZH / Hotel Zone → neighborhood="Zona Hotelera"
-- SM (SuperManzana) + número → neighborhood en Cancún
-- Aldea Zamá / Aldea Zama → neighborhood en Tulum
-
-### Playa del Carmen
-- La 5ta / Quinta Avenida / 5th Avenue → neighborhood="Centro"
-- Playacar → neighborhood="Playacar"
+REGLA CRÍTICA: Cuando extraes `street`, NUNCA inferir `neighborhoods` a partir de esa calle. \
+La búsqueda por calle ya filtra por address/title. Agregar neighborhood EXCLUYE resultados \
+válidos porque una misma calle cruza varias colonias. Ejemplos:
+- "depa en Illinois" → street="Illinois", neighborhoods=[] (NO agregar Nápoles)
+- "depa en Masaryk" → street="Masaryk", neighborhoods=[] (NO agregar Polanco)
+- "depa en Masaryk en Polanco" → street="Masaryk", neighborhoods=["Polanco"] (usuario dijo AMBOS)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## 6. QUERIES CONVERSACIONALES E INFORMALES
@@ -251,6 +273,10 @@ Interpreta el INTENT aunque el query sea muy informal, tenga typos o sea convers
     - Mantiene TODA la información relevante para búsqueda (ubicación, tipo, características)
     - Si el usuario menciona una calle/landmark, inclúyela en clean_query
     - Ejemplo: "vi una lona de un depa que denden en dumas" → "departamento en venta en Dumas, Polanco"
+13. NUNCA inferir `state` a partir del nombre de una colonia, fraccionamiento o desarrollo. \
+    El campo `state` SOLO se extrae si el usuario menciona EXPLÍCITAMENTE el estado. \
+    Una colonia como "Bosque Real", "Polanco" o "Valle Real" existe en VARIOS estados; \
+    asumir el estado incorrecto excluye resultados válidos. Si el usuario no dice el estado → state=null.
 """
 
 

@@ -113,14 +113,19 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 
 ### Fase 3 — Búsqueda ✅
 - [x] `search/query_parser.py`: Gemini Flash con structured output → ParsedQuery (cities[], neighborhoods[], property_types[], street, state, bedrooms, bathrooms, price, operation, semantic_query, clean_query)
-- [x] `search/searcher.py`: filtros must (hard) + should (soft MatchText) + vector search con query completo
+- [x] LLM prompt basado en datos reales del catálogo: 27 estados, 32 municipios, 80 colonias top, calles frecuentes
+- [x] Reglas de extracción: calle vs colonia basado en lista de colonias del catálogo; nombres compuestos; no inferir neighborhood desde street ni state desde neighborhood
+- [x] `search/searcher.py`: filtros unified must + vector search con query completo
 - [x] Multi-valor: cities[], neighborhoods[], property_types[] con MatchAny por unión de aliases
-- [x] Detección de calle (street) → MatchText en address y title como should filter
+- [x] Texto unificado: street y neighborhoods buscan en los 3 campos TEXT (address, neighborhood, title) con OR anidado — no importa clasificación del LLM
 - [x] TEXT indexes en address y title (MULTILINGUAL tokenizer) para búsqueda tokenizada
+- [x] Desambiguación automática: facet por estado (pre-fetch top-K por estado con conteos reales), conteo por colonia desde resultados, count() por tipo
+- [x] `state_results: dict[str, list[PropertyResult]]` — resultados pre-fetched por estado para toggle instantáneo en frontend
 - [x] Aliases faltantes: zapopan, tlajomulco/tlajo, tonalá, tlaquepaque, san pedro/spgg
 - [x] Endpoint POST `/search` con query en lenguaje natural, modelo y top_k
 - [x] SearchMetrics en respuesta: scores de similitud, filtros aplicados, tiempo de respuesta
 - [x] Query parser actualizado a `gemini-2.0-flash-preview` (gemini-3-flash-preview)
+- [x] Limpieza de "null" literal en direcciones del Excel (`excel_loader.py`)
 
 ### Fase 4 — Frontend ✅
 - [x] Playground web: React 19 + Vite 7 + Shadcn/ui + Tailwind v4 (dark theme)
@@ -130,6 +135,9 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 - [x] Gráfica de similitud interactiva (Recharts + d3-force) — scatterplot con zoom/pan
 - [x] Analytics: distribución de scores, histograma, métricas de búsqueda
 - [x] Manejo de errores y estados vacíos
+- [x] Desambiguación clickeable: badges por estado (toggle pre-fetched), tipo y colonia (filtro client-side)
+- [x] Filas separadas por campo en desglose (Estado / Tipo / Colonia)
+- [x] Conteos de badges respetan estado seleccionado (pasa baseResults, no data.results)
 
 ### Fase 5 — Mejoras (pendiente)
 - [ ] Sparse vectors BM25 + RRF hybrid search

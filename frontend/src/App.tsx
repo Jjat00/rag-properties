@@ -26,6 +26,7 @@ function App() {
   const [healthy, setHealthy] = useState<boolean | null>(null)
   const [query, setQuery] = useState("")
   const [activeDisambig, setActiveDisambig] = useState<Record<string, string>>({})
+  const [selectedState, setSelectedState] = useState<string | null>(null)
   const { status, data, error, search, reset } = useSearch()
 
   useEffect(() => {
@@ -40,18 +41,21 @@ function App() {
 
   const handleSearch = (q: string) => {
     setActiveDisambig({})
+    setSelectedState(null)
     search(q, selectedModel, topK)
   }
 
   const handleSuggestion = (q: string) => {
     setQuery(q)
     setActiveDisambig({})
+    setSelectedState(null)
     search(q, selectedModel, topK)
   }
 
   const handleReset = () => {
     setQuery("")
     setActiveDisambig({})
+    setSelectedState(null)
     reset()
   }
 
@@ -61,14 +65,22 @@ function App() {
     )
   }
 
-  const filteredResults = data?.results.filter(r => {
+  const handleStateClick = (state: string) => {
+    setSelectedState(prev => prev === state ? null : state)
+  }
+
+  const baseResults = selectedState
+    ? (data?.state_results[selectedState] ?? [])
+    : data?.results ?? []
+
+  const filteredResults = baseResults.filter(r => {
     for (const [field, value] of Object.entries(activeDisambig)) {
       if (!value) continue
       const fieldKey = field as keyof typeof r
       if (r[fieldKey] !== value) return false
     }
     return true
-  }) ?? []
+  })
 
   return (
     <TooltipProvider>
@@ -133,10 +145,12 @@ function App() {
           {data && (
             <FilterChips
               filters={data.parsed_filters}
-              results={data.results}
+              results={baseResults}
               disambiguation={data.disambiguation}
               activeDisambig={activeDisambig}
+              selectedState={selectedState}
               onDisambigClick={handleDisambigClick}
+              onStateClick={handleStateClick}
             />
           )}
 

@@ -11,14 +11,34 @@ from models.property import EXCEL_COLUMN_MAP, Property
 logger = logging.getLogger(__name__)
 
 
+import re as _re
+
+_NULL_PATTERN = _re.compile(r"\s*\bnull\b\s*$", _re.IGNORECASE)
+_ONLY_NULL = _re.compile(r"^\s*null\s*$", _re.IGNORECASE)
+
+
 def _clean_value(v: object) -> object:
-    """Convert pandas NaN/NaT to None. Handles float NaN that .where() misses."""
+    """Convert pandas NaN/NaT to None and remove stray 'null' tokens from strings.
+
+    Some rows in the Excel have literal 'null' appended to address fields
+    (e.g. 'Blvd Bosque real null') when the source system had no value.
+    We strip trailing 'null' tokens and return None for strings that are
+    entirely 'null' or empty after cleaning.
+    """
     if v is None:
         return None
     if isinstance(v, float) and math.isnan(v):
         return None
-    if pd.isna(v):
-        return None
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(v, str):
+        if _ONLY_NULL.match(v):
+            return None
+        cleaned = _NULL_PATTERN.sub("", v).strip()
+        return cleaned if cleaned else None
     return v
 
 

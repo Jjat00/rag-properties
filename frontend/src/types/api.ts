@@ -75,6 +75,8 @@ export interface SearchResult {
   total: number;
   metrics: SearchMetrics;
   disambiguation: DisambiguationInfo[];
+  /** Pre-fetched top-K results per state. Keys = exact Qdrant state values. */
+  state_results: Record<string, PropertyResult[]>;
 }
 
 export interface EmbeddingModelInfo {

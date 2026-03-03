@@ -7,7 +7,9 @@ interface FilterChipsProps {
   results?: PropertyResult[]
   disambiguation?: DisambiguationInfo[]
   activeDisambig?: Record<string, string>
+  selectedState?: string | null
   onDisambigClick?: (field: string, value: string) => void
+  onStateClick?: (state: string) => void
 }
 
 interface Chip {
@@ -25,12 +27,16 @@ const VARIANT_CLASSES: Record<Chip["variant"], string> = {
 const FIELD_LABELS: Record<string, string> = {
   property_type: "Tipo",
   city: "Ciudad",
+  state: "Estado",
+  neighborhood: "Colonia",
 }
 
 // Maps DisambiguationInfo field name to PropertyResult key
 const FIELD_TO_RESULT_KEY: Record<string, keyof PropertyResult> = {
   property_type: "property_type",
   city: "city",
+  state: "state",
+  neighborhood: "neighborhood",
 }
 
 function countByValue(results: PropertyResult[], field: keyof PropertyResult): Record<string, number> {
@@ -97,7 +103,9 @@ export function FilterChips({
   results = [],
   disambiguation,
   activeDisambig = {},
+  selectedState = null,
   onDisambigClick,
+  onStateClick,
 }: FilterChipsProps) {
   const chips = buildChips(filters)
   const hasActiveFilter = Object.values(activeDisambig).some(Boolean)
@@ -123,48 +131,84 @@ export function FilterChips({
         ))}
       </div>
 
-      {/* Disambiguation breakdown — counts from current results, clickable */}
+      {/* Disambiguation breakdown — one row per field */}
       {disambiguation && disambiguation.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground">Desglose:</span>
+        <div className="space-y-1">
           {disambiguation.map((info) => {
+            if (info.field === "state") {
+              return (
+                <div key="state" className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Estado:</span>
+                  {info.buckets.map((bucket) => {
+                    const isActive = selectedState === bucket.value
+                    return (
+                      <Badge
+                        key={bucket.value}
+                        variant="outline"
+                        onClick={() => onStateClick?.(bucket.value)}
+                        title={`${bucket.count} propiedades en el catálogo`}
+                        className={
+                          isActive
+                            ? "bg-blue-500/40 text-blue-300 border-blue-400/60 cursor-pointer"
+                            : "bg-amber-500/15 text-amber-400 border-amber-500/30 cursor-pointer hover:bg-amber-500/25"
+                        }
+                      >
+                        {bucket.value} ({bucket.count})
+                      </Badge>
+                    )
+                  })}
+                  {selectedState && (
+                    <button
+                      onClick={() => onStateClick?.(selectedState)}
+                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    >
+                      ver todos
+                    </button>
+                  )}
+                </div>
+              )
+            }
+
+            // Non-state fields: count from current baseResults (state-aware)
             const resultKey = FIELD_TO_RESULT_KEY[info.field]
             const counts = resultKey ? countByValue(results, resultKey) : {}
+            const nonZeroBuckets = info.buckets.filter((b) => (counts[b.value] ?? 0) > 0)
+            if (nonZeroBuckets.length === 0) return null
 
-            return info.buckets
-              .map((bucket) => {
-                const count = counts[bucket.value] ?? 0
-                if (count === 0) return null
-                const isActive = activeDisambig[info.field] === bucket.value
-                return (
-                  <Badge
-                    key={`${info.field}-${bucket.value}`}
-                    variant="outline"
-                    onClick={() => onDisambigClick?.(info.field, bucket.value)}
-                    className={
-                      isActive
-                        ? "bg-amber-500/40 text-amber-300 border-amber-400/60 cursor-pointer"
-                        : "bg-amber-500/15 text-amber-400 border-amber-500/30 cursor-pointer hover:bg-amber-500/25"
-                    }
+            return (
+              <div key={info.field} className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground">
+                  {FIELD_LABELS[info.field] ?? info.field}:
+                </span>
+                {nonZeroBuckets.map((bucket) => {
+                  const count = counts[bucket.value] ?? 0
+                  const isActive = activeDisambig[info.field] === bucket.value
+                  return (
+                    <Badge
+                      key={bucket.value}
+                      variant="outline"
+                      onClick={() => onDisambigClick?.(info.field, bucket.value)}
+                      className={
+                        isActive
+                          ? "bg-amber-500/40 text-amber-300 border-amber-400/60 cursor-pointer"
+                          : "bg-amber-500/15 text-amber-400 border-amber-500/30 cursor-pointer hover:bg-amber-500/25"
+                      }
+                    >
+                      {bucket.value} ({count})
+                    </Badge>
+                  )
+                })}
+                {hasActiveFilter && activeDisambig[info.field] && (
+                  <button
+                    onClick={() => onDisambigClick?.(info.field, activeDisambig[info.field])}
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
                   >
-                    {FIELD_LABELS[info.field] ?? info.field}: {bucket.value} ({count})
-                  </Badge>
-                )
-              })
-              .filter(Boolean)
+                    ver todos
+                  </button>
+                )}
+              </div>
+            )
           })}
-          {hasActiveFilter && (
-            <button
-              onClick={() => {
-                for (const [field, value] of Object.entries(activeDisambig)) {
-                  if (value) onDisambigClick?.(field, value)
-                }
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-            >
-              ver todos
-            </button>
-          )}
         </div>
       )}
     </div>

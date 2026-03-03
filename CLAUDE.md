@@ -222,7 +222,7 @@ LangGraph añade complejidad sin beneficio para este caso. Un endpoint FastAPI s
 - El modelo activo se configura via `.env` o parámetro en el endpoint
 - Esto permite A/B testing de calidad de resultados
 
-### Estrategia de búsqueda: must + should + semántica
+### Estrategia de búsqueda: unified must + semántica
 
 ```
 Query usuario
@@ -230,17 +230,24 @@ Query usuario
     → Capa 2: LLM parser extrae filtros + query semántico
        - cities[], neighborhoods[], property_types[] (listas para multi-valor)
        - street (calle detectada en el query)
-    → Qdrant filtra con must + should:
+       - Prompt basado en datos reales del catálogo (80 colonias top, calles frecuentes, municipios)
+    → Qdrant filtra con must unificado:
        - must: city (MatchAny), state, property_type (MatchAny), operation, rangos numéricos
-       - should: MatchText en address/title (street), MatchText en neighborhood/title (neighborhoods)
+       - must (texto): Filter(should=[address, neighborhood, title] MatchText) para street y neighborhoods
+         → Busca en los 3 campos TEXT con OR: no importa si el LLM clasifica como calle o colonia
+    → Desambiguación automática:
+       - Estado: facet() descubre estados, pre-fetch top-K por estado, conteos reales (no catálogo)
+       - Colonia: conteo desde resultados cuando hay street
+       - Tipo: count() por variante cuando hay aliases expandidos
     → Búsqueda vectorial dense con query COMPLETO del usuario
-    → Retorna top-k propiedades (should-matching priorizadas por Qdrant)
+    → Retorna top-k propiedades + state_results pre-fetched
 ```
 
-**must vs should**:
-- **must**: filtros duros — la propiedad DEBE cumplir todos
-- **should**: filtros suaves — entre las que cumplen must, se priorizan las que cumplen algún should
-- Si solo hay should (sin must): al menos uno debe cumplirse
+**Filtros de texto (street/neighborhoods)**:
+- Tanto street como neighborhoods buscan en los 3 campos TEXT: address, neighborhood, title
+- Se usa `Filter(should=[...3 MatchText...])` anidado dentro de `must`
+- Esto garantiza que "Pueblo Cayaco" se encuentra sea que esté en address, neighborhood o title
+- El LLM no necesita clasificar perfectamente: el sistema busca en todos los campos
 
 ### Qdrant: Configuración de colecciones
 - **Una colección por modelo de embedding** (ej: `properties_openai_small`, `properties_openai_large`, `properties_gemini`)
@@ -248,9 +255,9 @@ Query usuario
 - **Payload indexes** (crear ANTES de subir datos):
   - `city` (keyword) — para filtrar por ciudad (normalizado)
   - `state` (keyword) — para filtrar por estado (normalizado)
-  - `neighborhood` (text) — full-text index para partial matching (should filter)
-  - `address` (text, MULTILINGUAL) — para MatchText de calles (should filter)
-  - `title` (text, MULTILINGUAL) — para MatchText de keywords en título (should filter)
+  - `neighborhood` (text) — full-text index para partial matching (must, OR con address/title)
+  - `address` (text, MULTILINGUAL) — para MatchText de calles (must, OR con neighborhood/title)
+  - `title` (text, MULTILINGUAL) — para MatchText de keywords en título (must, OR con address/neighborhood)
   - `property_type` (keyword) — casa, departamento, terreno, etc.
   - `operation` (keyword) — sale, rent
   - `bedrooms` (integer) — número de recámaras

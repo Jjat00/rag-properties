@@ -23,13 +23,13 @@ Query: "bodega o nave en gdl, zapopan, tlajo en calle alfonso nápoles"
    cities=["Guadalajara","Zapopan","Tlajomulco"], property_types=["Bodega","Nave"],
    street="Alfonso Nápoles"
     ↓
-3. Filtros must + should en Qdrant:
-   must: city IN [...], property_type IN ["Bodega comercial","Nave industrial"]
-   should: address MATCH "Alfonso Nápoles", title MATCH "Alfonso Nápoles"
+3. Filtros must en Qdrant:
+   must: city IN [...], property_type IN ["Bodega comercial","Nave industrial"],
+         (address OR neighborhood OR title MATCH "Alfonso Nápoles")
     ↓
 4. Vector search: embedding del query completo vs propiedades filtradas
     ↓
-5. Top-K: propiedades más relevantes (should-matching primero)
+5. Top-K + desambiguación automática por estado/colonia/tipo
 ```
 
 ## Estructura
@@ -171,9 +171,12 @@ CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
 - **Embedding = Title primero** — mayor valor semántico, luego tipo/ubicación/atributos
 - **Query completo al embedding** — no solo el residuo post-filtros
 - **Direcciones NO en embedding, SÍ indexadas como TEXT** — ruido para embeddings pero buscables via MatchText tokenizado
-- **Filtros must + should** — must para filtros duros (ciudad, tipo, precio), should para text-match suave (calle, colonia) que prioriza sin excluir
+- **Filtros unified must** — todos los filtros son must; ubicaciones textuales (calle, colonia) usan `Filter(should=[address, neighborhood, title])` anidado, buscando en los 3 campos TEXT
 - **Multi-valor en ParsedQuery** — cities[], neighborhoods[], property_types[] soportan queries con múltiples ubicaciones/tipos
 - **Normalización doble** — diccionario estático + LLM parser para ubicaciones MX
+- **Desambiguación automática** — facets por estado (pre-fetch por estado), conteo por colonia y tipo cuando hay múltiples valores
+- **LLM prompt basado en datos reales** — estados, ciudades, colonias y calles del catálogo Excel, no conocimiento general
+- **Limpieza de datos** — "null" literal en direcciones del Excel se limpia en ingesta
 - **Sparse BM25 en Fase 5** — beneficio marginal con filtros + dense; Qdrant lo hace server-side
 
 Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
@@ -182,7 +185,7 @@ Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
 
 - [x] **Fase 1** — Backend base: proyecto uv, modelos, embeddings multi-modelo, Qdrant manager, FastAPI
 - [x] **Fase 2** — Ingesta: Excel loader, location normalizer, indexer, endpoint POST /ingest (8,803 propiedades)
-- [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash + búsqueda semántica con filtros must/should, multi-ciudad/tipo/colonia, detección de calle
-- [x] **Fase 4** — Frontend: playground React 19 + Vite + Shadcn/ui con gráfica de similitud interactiva
+- [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash (prompt basado en datos reales del catálogo) + filtros unified must con MatchText en 3 campos + desambiguación automática por estado/colonia/tipo + pre-fetch por estado
+- [x] **Fase 4** — Frontend: playground React 19 + Vite + Shadcn/ui con gráfica de similitud interactiva + badges de desambiguación clickeables por campo
 - [ ] **Fase 5** — Mejoras: sparse BM25 + RRF, reranking, paginación, quantization
 - [x] **Fase 6** — Deploy: Railway (backend) + Vercel (frontend) + Qdrant Cloud

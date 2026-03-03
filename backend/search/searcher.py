@@ -6,6 +6,7 @@ import time
 
 from pydantic import BaseModel
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.http.models import FacetValueHit
 from qdrant_client.models import (
     FieldCondition,
     Filter,
@@ -137,6 +138,9 @@ class SearchResult(BaseModel):
     total: int
     metrics: SearchMetrics = SearchMetrics()
     disambiguation: list[DisambiguationInfo] = []
+    # Pre-fetched top-K results per state, populated when neighborhood disambiguation fires.
+    # Keys are exact state values as stored in Qdrant (e.g. "Nuevo León", "Edo. de México").
+    state_results: dict[str, list[PropertyResult]] = {}
 
 
 def _normalize_parsed_locations(parsed: ParsedQuery) -> tuple[ParsedQuery, list[str]]:
@@ -173,6 +177,8 @@ class _FilterMeta:
     def __init__(self) -> None:
         self.expanded_type_variants: list[str] = []
         self.expanded_city_variants: list[str] = []
+        self.disambiguate_state: bool = False  # True when neighborhoods queried without a state filter
+        self.has_street: bool = False  # True when street filter was applied
 
 
 def _build_filter(
@@ -293,37 +299,38 @@ def _build_filter(
             )
         )
 
-    # --- SHOULD conditions (soft text-match filters) ---
+    # Flag state disambiguation when neighborhoods are queried without an explicit state
+    if parsed.neighborhoods and not parsed.state:
+        meta.disambiguate_state = True
 
-    # Street: MatchText on address and title
+    # --- LOCATION TEXT FILTERS (must, OR across all text fields) ---
+    # Both street and neighborhoods search ALL three text-indexed fields:
+    # address, neighborhood, title.  This way, regardless of whether the LLM
+    # classifies a name as street or neighborhood, we find the match.
+
     if parsed.street:
-        should_conditions.append(
-            FieldCondition(key="address", match=MatchText(text=parsed.street))
+        must_conditions.append(
+            Filter(should=[
+                FieldCondition(key="address", match=MatchText(text=parsed.street)),
+                FieldCondition(key="neighborhood", match=MatchText(text=parsed.street)),
+                FieldCondition(key="title", match=MatchText(text=parsed.street)),
+            ])
         )
-        should_conditions.append(
-            FieldCondition(key="title", match=MatchText(text=parsed.street))
-        )
+        meta.has_street = True
 
-    # Neighborhoods: MatchText on neighborhood and title for each
     for nb in parsed.neighborhoods:
-        should_conditions.append(
-            FieldCondition(key="neighborhood", match=MatchText(text=nb))
-        )
-        should_conditions.append(
-            FieldCondition(key="title", match=MatchText(text=nb))
+        must_conditions.append(
+            Filter(should=[
+                FieldCondition(key="neighborhood", match=MatchText(text=nb)),
+                FieldCondition(key="title", match=MatchText(text=nb)),
+                FieldCondition(key="address", match=MatchText(text=nb)),
+            ])
         )
 
-    if not must_conditions and not should_conditions:
+    if not must_conditions:
         return None, meta
 
-    # Build filter combining must and should
-    # When must + should: Qdrant requires all must AND at least one should
-    # When only should: requires at least one should
-    # When only must: just the must conditions
-    return Filter(
-        must=must_conditions if must_conditions else None,
-        should=should_conditions if should_conditions else None,
-    ), meta
+    return Filter(must=must_conditions), meta
 
 
 class Searcher:
@@ -338,6 +345,109 @@ class Searcher:
         self._client = client
         self._provider = provider
         self._top_k = top_k
+
+    async def _facet_state(
+        self,
+        neighborhoods: list[str],
+        base_filter: Filter | None,
+    ) -> DisambiguationInfo | None:
+        """Discover which states have results using Qdrant facet().
+
+        Uses a relaxed filter — only the neighborhood should conditions — so
+        it counts ALL properties in that zone regardless of type or operation.
+        This lets the user see which states have properties in their zone of
+        interest even if the current type/operation filters narrow to one state.
+        """
+        # Build a filter with only the neighborhood should conditions
+        should_conditions = [
+            FieldCondition(key="neighborhood", match=MatchText(text=nb))
+            for nb in neighborhoods
+        ] + [
+            FieldCondition(key="title", match=MatchText(text=nb))
+            for nb in neighborhoods
+        ]
+        # Keep any must conditions from base_filter EXCEPT property_type and operation,
+        # so we find the neighborhood across all property types and operations.
+        must_conditions: list[FieldCondition] = []
+        if base_filter and base_filter.must:
+            must_conditions = [
+                c for c in base_filter.must
+                if isinstance(c, FieldCondition) and c.key not in ("property_type", "operation")
+            ]
+        neighborhood_filter = Filter(
+            must=must_conditions if must_conditions else None,
+            should=should_conditions,
+        )
+        response = await self._client.facet(
+            collection_name=self._provider.collection_name,
+            key="state",
+            facet_filter=neighborhood_filter,
+            limit=10,
+            exact=False,
+        )
+        buckets = [
+            FacetBucket(value=hit.value, count=hit.count)
+            for hit in response.hits
+            if hit.count > 0
+        ]
+        if len(buckets) < 2:
+            return None
+        buckets.sort(key=lambda b: b.count, reverse=True)
+        return DisambiguationInfo(field="state", buckets=buckets)
+
+    def _format_point(self, point: object) -> PropertyResult:
+        """Convert a Qdrant ScoredPoint to a PropertyResult."""
+        payload = getattr(point, "payload", None) or {}
+        return PropertyResult(
+            score=getattr(point, "score", 0.0),
+            id=payload.get("id"),
+            title=payload.get("title"),
+            property_type=payload.get("property_type"),
+            operation=payload.get("operation"),
+            price=payload.get("price"),
+            currency=payload.get("currency"),
+            city=payload.get("city"),
+            state=payload.get("state"),
+            neighborhood=payload.get("neighborhood"),
+            address=payload.get("address"),
+            bedrooms=payload.get("bedrooms"),
+            bathrooms=payload.get("bathrooms"),
+            surface=payload.get("surface"),
+            roofed_surface=payload.get("roofed_surface"),
+            condition=payload.get("condition"),
+            internal_id=payload.get("internal_id"),
+            agent_first_name=payload.get("agent_first_name"),
+            agent_last_name=payload.get("agent_last_name"),
+            agent_company=payload.get("agent_company"),
+            agent_phone=payload.get("agent_phone"),
+            address_name=payload.get("address_name"),
+        )
+
+    async def _search_for_state(
+        self,
+        state: str,
+        query_vector: list[float],
+        base_filter: Filter | None,
+        k: int,
+    ) -> tuple[str, list[PropertyResult]]:
+        """Run a vector search restricted to a specific state value."""
+        state_condition = FieldCondition(key="state", match=MatchValue(value=state))
+        must = list(base_filter.must) if base_filter and base_filter.must else []
+        # Remove any existing state must (shouldn't exist, but be safe)
+        must = [c for c in must if not (isinstance(c, FieldCondition) and c.key == "state")]
+        must.append(state_condition)
+        state_filter = Filter(
+            must=must,
+            should=base_filter.should if base_filter and base_filter.should else None,
+        )
+        results = await self._client.query_points(
+            collection_name=self._provider.collection_name,
+            query=query_vector,
+            query_filter=state_filter,
+            limit=k,
+            with_payload=True,
+        )
+        return state, [self._format_point(p) for p in results.points]
 
     async def _facet_field(
         self,
@@ -420,8 +530,7 @@ class Searcher:
         )
         search_time_ms = (time.perf_counter() - search_start) * 1000
 
-        # Disambiguation: facet ambiguous fields in parallel
-        disambiguation: list[DisambiguationInfo] = []
+        # Disambiguation: facet ambiguous fields in parallel with the main search
         facet_tasks = []
         if filter_meta.expanded_type_variants:
             facet_tasks.append(
@@ -431,40 +540,56 @@ class Searcher:
             facet_tasks.append(
                 self._facet_field("city", filter_meta.expanded_city_variants, qdrant_filter)
             )
+        if filter_meta.disambiguate_state:
+            facet_tasks.append(self._facet_state(parsed.neighborhoods, qdrant_filter))
+
+        disambiguation: list[DisambiguationInfo] = []
+        state_results: dict[str, list[PropertyResult]] = {}
+
         if facet_tasks:
             facet_results = await asyncio.gather(*facet_tasks)
             disambiguation = [r for r in facet_results if r is not None]
 
-        # Format results
-        properties: list[PropertyResult] = []
-        for point in results.points:
-            payload = point.payload or {}
-            properties.append(
-                PropertyResult(
-                    score=point.score,
-                    id=payload.get("id"),
-                    title=payload.get("title"),
-                    property_type=payload.get("property_type"),
-                    operation=payload.get("operation"),
-                    price=payload.get("price"),
-                    currency=payload.get("currency"),
-                    city=payload.get("city"),
-                    state=payload.get("state"),
-                    neighborhood=payload.get("neighborhood"),
-                    address=payload.get("address"),
-                    bedrooms=payload.get("bedrooms"),
-                    bathrooms=payload.get("bathrooms"),
-                    surface=payload.get("surface"),
-                    roofed_surface=payload.get("roofed_surface"),
-                    condition=payload.get("condition"),
-                    internal_id=payload.get("internal_id"),
-                    agent_first_name=payload.get("agent_first_name"),
-                    agent_last_name=payload.get("agent_last_name"),
-                    agent_company=payload.get("agent_company"),
-                    agent_phone=payload.get("agent_phone"),
-                    address_name=payload.get("address_name"),
-                )
-            )
+            # If state disambiguation found multiple states, pre-fetch top-K per state
+            # so the frontend can switch between them instantly without a new search.
+            state_facet = next((d for d in disambiguation if d.field == "state"), None)
+            if state_facet:
+                state_searches = await asyncio.gather(*[
+                    self._search_for_state(b.value, query_vector, qdrant_filter, k)
+                    for b in state_facet.buckets
+                ])
+                state_results = {s: r for s, r in state_searches if r}
+
+            # Update state facet counts to reflect actual filtered results.
+            # The facet uses a relaxed filter (all types), but the user wants
+            # counts that match what clicking the badge shows (filtered results).
+            if state_results:
+                updated_buckets = [
+                    FacetBucket(value=s, count=len(r))
+                    for s, r in state_results.items()
+                    if r
+                ]
+                if updated_buckets:
+                    updated_buckets.sort(key=lambda b: b.count, reverse=True)
+                    disambiguation = [d for d in disambiguation if d.field != "state"]
+                    disambiguation.append(DisambiguationInfo(field="state", buckets=updated_buckets))
+                else:
+                    # No state has filtered results — remove state disambiguation entirely
+                    disambiguation = [d for d in disambiguation if d.field != "state"]
+
+        # Format main results
+        properties: list[PropertyResult] = [self._format_point(p) for p in results.points]
+
+        # Neighborhood disambiguation from results (when street was the search key)
+        if filter_meta.has_street and properties:
+            nb_counts: dict[str, int] = {}
+            for p in properties:
+                if p.neighborhood:
+                    nb_counts[p.neighborhood] = nb_counts.get(p.neighborhood, 0) + 1
+            if len(nb_counts) >= 2:
+                buckets = [FacetBucket(value=v, count=c) for v, c in nb_counts.items()]
+                buckets.sort(key=lambda b: b.count, reverse=True)
+                disambiguation.append(DisambiguationInfo(field="neighborhood", buckets=buckets))
 
         # Compute score stats
         scores = [p.score for p in properties]
@@ -489,4 +614,5 @@ class Searcher:
             total=len(properties),
             metrics=metrics,
             disambiguation=disambiguation,
+            state_results=state_results,
         )
