@@ -1,3 +1,4 @@
+import Markdown from "react-markdown";
 import { Search, User, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types/api";
@@ -42,7 +43,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Content */}
         {message.content && (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          isUser ? (
+            <p className="whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <Markdown
+              components={{
+                p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                ul: ({ children }) => <ul className="list-disc pl-4 mb-1">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-4 mb-1">{children}</ol>,
+                li: ({ children }) => <li className="mb-0.5">{children}</li>,
+              }}
+            >
+              {message.content}
+            </Markdown>
+          )
         )}
 
         {/* Streaming cursor */}
