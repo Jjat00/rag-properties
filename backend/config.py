@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     gemini_api_key: str = ""
-    default_embedding_model: EmbeddingModel = EmbeddingModel.OPENAI_SMALL
+    default_embedding_model: EmbeddingModel = EmbeddingModel.GEMINI
     qdrant_url: str | None = None
     qdrant_api_key: str | None = None
     qdrant_host: str = "localhost"
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     excel_path: str = "data/properties.xlsx"
     search_top_k: int = 10
     query_parser_model: str = "gemini-3-flash-preview"
-    agent_model: str = "gemini-2.0-flash"
+    agent_model: str = "gemini-2.5-flash"
     cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:5173"]
     )

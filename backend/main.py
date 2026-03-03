@@ -223,10 +223,20 @@ async def chat(request: ChatRequest):
                 if kind == "on_chat_model_stream":
                     chunk = data.get("chunk")
                     if isinstance(chunk, AIMessageChunk) and chunk.content:
-                        yield {
-                            "event": "token",
-                            "data": json.dumps(chunk.content, ensure_ascii=False),
-                        }
+                        # Gemini may return content as list of parts
+                        content = chunk.content
+                        if isinstance(content, list):
+                            text = "".join(
+                                p.get("text", "") if isinstance(p, dict) else str(p)
+                                for p in content
+                            )
+                        else:
+                            text = str(content)
+                        if text:
+                            yield {
+                                "event": "token",
+                                "data": json.dumps(text, ensure_ascii=False),
+                            }
 
                 elif kind == "on_tool_start":
                     yield {
