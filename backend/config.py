@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     excel_path: str = "data/properties.xlsx"
     search_top_k: int = 10
     query_parser_model: str = "gemini-3-flash-preview"
+    agent_model: str = "gemini-2.0-flash"
     cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:5173"]
     )
