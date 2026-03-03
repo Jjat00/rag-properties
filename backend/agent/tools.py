@@ -35,6 +35,7 @@ def create_search_tool(
         Args:
             query: Natural language search query, e.g. "casa de 3 recámaras en Polanco menos de 10 millones"
         """
+        logger.info("search_properties called with query: %s", query)
         parse_start = time.perf_counter()
         parsed = await query_parser.parse(query)
         parse_time_ms = (time.perf_counter() - parse_start) * 1000
