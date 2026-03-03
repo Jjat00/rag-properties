@@ -89,3 +89,39 @@ export interface EmbeddingModelInfo {
 export interface HealthStatus {
   status: string;
 }
+
+// Chat types
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  content: string;
+  results?: PropertyResult[];
+  filters?: ParsedQuery;
+  disambiguation?: DisambiguationInfo[];
+  stateResults?: Record<string, PropertyResult[]>;
+  metrics?: SearchMetrics;
+  isStreaming?: boolean;
+  isSearching?: boolean;
+}
+
+export interface ChatRequest {
+  message: string;
+  session_id?: string | null;
+  model: string;
+  top_k: number;
+}
+
+export type ChatEventType =
+  | "session"
+  | "token"
+  | "tool_start"
+  | "results"
+  | "filters"
+  | "disambiguation"
+  | "state_results"
+  | "metrics"
+  | "done"
+  | "error";
