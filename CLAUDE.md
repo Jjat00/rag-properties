@@ -6,23 +6,30 @@ Sistema RAG para búsqueda semántica de propiedades inmobiliarias en México.
 El usuario puede buscar propiedades en lenguaje natural (ej: "casa de 4 habitaciones con 2 baños en Cancún")
 y el sistema retorna las propiedades más relevantes del catálogo.
 
-**Flujo principal:**
+**Dos modos de uso:**
+1. **Chat conversacional** (vista principal): Agente multi-turno con LangGraph ReAct + Gemini 3 Flash. Busca propiedades, presenta resultados y hace preguntas dirigidas cuando hay ambigüedad. SSE streaming token por token.
+2. **Playground** (búsqueda single-shot): Query directo con analytics (distribución de scores, gráfica de similitud, comparación de modelos A/B).
+
+**Flujo principal (compartido por ambos modos):**
 1. Ingesta: Leer Excel de propiedades → canonicalizar ubicaciones → generar embeddings → almacenar en Qdrant
-2. Búsqueda: Query en lenguaje natural → normalizar ubicaciones → extraer filtros con LLM → pre-filtrar metadata → búsqueda vectorial dense con query completo → resultados
+2. Búsqueda: Query en lenguaje natural → normalizar ubicaciones → extraer filtros con LLM → pre-filtrar metadata → búsqueda vectorial dense con query completo → desambiguación automática → resultados
 
 ---
 
 ## Stack tecnológico
 
-- **Lenguaje**: Python (backend)
+- **Lenguaje**: Python 3.12 (backend)
 - **Package manager**: `uv` — SIEMPRE usar uv, nunca pip directamente
-- **Vector DB**: Qdrant (local con Docker, imagen `qdrant/qdrant:latest`)
-- **Embeddings**: OpenAI text-embedding-3-small/large y Gemini gemini-embedding-001 (multi-modelo, intercambiables)
-- **Query parsing**: Gemini Flash o GPT-4o-mini con structured output para extraer filtros
+- **Vector DB**: Qdrant (local Docker en desarrollo, Qdrant Cloud en producción)
+- **Embeddings**: Gemini gemini-embedding-001 (default) + OpenAI text-embedding-3 small/large (multi-modelo, intercambiables)
+- **Query parsing**: Gemini 3 Flash con structured output para extraer filtros
+- **Agente conversacional**: LangGraph (ReAct) + Gemini 3 Flash con tool calling
+- **Streaming**: SSE (Server-Sent Events) para chat en tiempo real
 - **LLM credits**: Gemini y OpenAI (NO Anthropic). Nunca usar APIs de Anthropic.
 - **Self-hosted**: NADA self-hosted. Solo APIs y servicios managed.
-- **Backend**: FastAPI (sin LangGraph, flujo lineal simple)
-- **Frontend**: Playground web para visualizar resultados (a definir)
+- **Backend**: FastAPI + LangGraph (chat multi-turno) + sse-starlette (streaming)
+- **Frontend**: React 19 + Vite + Shadcn/ui + Tailwind v4 (dos vistas: Chat y Playground)
+- **Deploy**: Railway (backend) + Vercel (frontend) + Qdrant Cloud
 - **Fecha de inicio**: 16 de febrero de 2026
 
 ---
@@ -60,36 +67,61 @@ y el sistema retorna las propiedades más relevantes del catálogo.
 rag-properties/
 ├── CLAUDE.md
 ├── README.md
-├── plan.md                     # Plan de fases y decisiones
+├── plan.md                         # Plan de fases y decisiones
 ├── data/
-│   └── properties.xlsx         # Excel fuente de datos
+│   └── properties.xlsx             # Excel fuente de datos
 ├── backend/
-│   ├── pyproject.toml          # Gestionado por uv
+│   ├── pyproject.toml              # Dependencias (uv)
 │   ├── uv.lock
 │   ├── .venv/
-│   ├── .env                    # Variables de entorno (no commitear)
+│   ├── .env                        # Variables de entorno (no commitear)
 │   ├── .env.example
-│   ├── config.py               # Settings, enum de modelos, dimensiones
-│   ├── main.py                 # FastAPI app + endpoints
+│   ├── config.py                   # Settings, enum de modelos, dimensiones
+│   ├── main.py                     # FastAPI app + endpoints (search, chat SSE)
 │   ├── models/
-│   │   └── property.py         # Modelo Pydantic de propiedad
+│   │   └── property.py             # Modelo Pydantic de propiedad
+│   ├── agent/                      # Agente conversacional (LangGraph)
+│   │   ├── state.py                # AgentState (MessagesState + campos de búsqueda)
+│   │   ├── prompt.py               # System prompt del agente
+│   │   ├── tools.py                # Tool search_properties (wrappea Searcher)
+│   │   ├── graph.py                # ReAct graph: agent → tools → loop
+│   │   └── session.py              # SessionManager in-memory
 │   ├── embeddings/
-│   │   ├── base.py             # Clase abstracta EmbeddingProvider
-│   │   ├── openai_provider.py  # OpenAI text-embedding-3-small/large
-│   │   ├── gemini_provider.py  # Gemini gemini-embedding-001
-│   │   └── registry.py         # Registry con cache de providers
+│   │   ├── base.py                 # Clase abstracta EmbeddingProvider
+│   │   ├── openai_provider.py      # OpenAI text-embedding-3-small/large
+│   │   ├── gemini_provider.py      # Gemini gemini-embedding-001
+│   │   └── registry.py             # Registry con cache de providers
 │   ├── vectorstore/
-│   │   └── qdrant_manager.py   # Gestión de colecciones e indexes
+│   │   └── qdrant_manager.py       # Gestión de colecciones e indexes
 │   ├── ingestion/
 │   │   ├── location_normalizer.py  # Diccionario estático de aliases MX
-│   │   ├── excel_loader.py     # Leer y parsear Excel
-│   │   └── indexer.py          # Generar embeddings e indexar en Qdrant
+│   │   ├── excel_loader.py         # Leer y parsear Excel
+│   │   └── indexer.py              # Generar embeddings e indexar en Qdrant
 │   └── search/
 │       ├── location_normalizer.py  # Diccionario de aliases MX
-│       ├── query_parser.py         # LLM structured output
-│       └── searcher.py             # Búsqueda semántica
-└── frontend/
-    └── (playground web)
+│       ├── query_parser.py         # LLM structured output → ParsedQuery
+│       └── searcher.py             # Búsqueda semántica con filtros
+├── frontend/                       # React 19 + Vite + Shadcn (Chat + Playground)
+│   └── src/
+│       ├── components/
+│       │   ├── chat/               # Vista Chat (split-screen)
+│       │   │   ├── chat-view.tsx   # Layout 60/40 (chat + propiedades)
+│       │   │   ├── chat-panel.tsx  # Lista de mensajes + input
+│       │   │   ├── chat-input.tsx  # Textarea + enviar
+│       │   │   ├── chat-message.tsx # Burbujas con markdown
+│       │   │   └── properties-panel.tsx # Panel derecho con resultados
+│       │   ├── search/             # Barra de búsqueda (playground)
+│       │   ├── results/            # Cards de propiedades (compartido)
+│       │   └── analytics/          # Gráficas de similitud (playground)
+│       ├── hooks/
+│       │   ├── use-chat.ts         # Estado del chat + streaming
+│       │   └── use-search.ts       # Estado de búsqueda (playground)
+│       ├── lib/
+│       │   ├── chat-api.ts         # SSE stream parser con callbacks
+│       │   └── api.ts              # API client REST
+│       └── types/
+│           └── api.ts              # Tipos compartidos
+└── data/                           # Excel de propiedades
 ```
 
 ---
@@ -182,7 +214,7 @@ Los filtros keyword de Qdrant son exact-match, así que la normalización es obl
 - Se aplica tanto en ingesta (canonicalizar datos del Excel) como en query time
 - Los nombres canónicos deben salir de auditar el Excel: `df["Address: City: Name"].value_counts()`
 
-**Capa 2 — LLM parser** (Gemini Flash / GPT-4o-mini):
+**Capa 2 — LLM parser** (Gemini 3 Flash):
 - Resuelve casos ambiguos ("México" solo → Ciudad o Estado según contexto)
 - Normaliza variantes no cubiertas por el diccionario
 - El system prompt incluye la lista de nombres canónicos del catálogo
@@ -205,22 +237,86 @@ Los filtros keyword de Qdrant son exact-match, así que la normalización es obl
 
 ## Estrategia RAG — Decisiones de arquitectura
 
-### Por qué NO LangGraph
-El flujo es lineal (query → parse → search → respond). No hay branching, loops ni human-in-the-loop.
-LangGraph añade complejidad sin beneficio para este caso. Un endpoint FastAPI simple es suficiente.
+### LangGraph para chat, FastAPI para playground
+- **Chat conversacional**: LangGraph ReAct con MemorySaver — multi-turno justifica el framework (loop tool-calling, checkpointer, streaming)
+- **Playground**: FastAPI simple — búsqueda single-shot no necesita agente ni memoria
+- El agente wrappea el MISMO pipeline de búsqueda (QueryParser → Searcher) que usa el playground
 
-### Modelos de embedding (multi-modelo, intercambiables)
+### Modelos
 
-| Modelo | Dimensiones | Costo | Provider |
-|--------|------------|-------|----------|
-| `text-embedding-3-small` | 1536d | $0.02/M tokens | OpenAI |
-| `text-embedding-3-large` | 3072d | $0.13/M tokens | OpenAI |
-| `gemini-embedding-001` | 3072d | $0.15/M tokens | Gemini |
+#### Embeddings (intercambiables)
+
+| Modelo | Dimensiones | Colección Qdrant | Costo | Default |
+|--------|------------|------------------|-------|---------|
+| `gemini` | 3072 | `properties_gemini` | $0.15/M tokens | **Sí** |
+| `openai-small` | 1536 | `properties_openai_small` | $0.02/M tokens | No |
+| `openai-large` | 3072 | `properties_openai_large` | $0.13/M tokens | No |
 
 - Todos via API, **nada self-hosted**
 - Cosine similarity para todos
-- El modelo activo se configura via `.env` o parámetro en el endpoint
+- El modelo activo se configura via `.env` (`DEFAULT_EMBEDDING_MODEL=gemini`) o parámetro en el endpoint
 - Esto permite A/B testing de calidad de resultados
+
+#### LLMs
+
+| Uso | Modelo | Provider |
+|-----|--------|----------|
+| Query parsing | `gemini-3-flash-preview` | Google Gemini |
+| Agente conversacional | `gemini-3-flash-preview` | Google Gemini |
+
+### Arquitectura del agente conversacional
+
+```
+┌─────────────────────────────────────────────────┐
+│  POST /chat (SSE)                               │
+│                                                 │
+│  User message                                   │
+│       ↓                                         │
+│  ┌─────────┐    tool_calls?    ┌──────────┐     │
+│  │  Agent   │ ──────────────→  │  Tools   │     │
+│  │ (Gemini  │ ←──────────────  │ (search) │     │
+│  │  3 Flash)│   tool results   └──────────┘     │
+│  └─────────┘                                    │
+│       ↓ no tool_calls                           │
+│  Response (streaming SSE)                       │
+│       ↓                                         │
+│  Frontend: chat panel + properties panel        │
+└─────────────────────────────────────────────────┘
+```
+
+**Grafo ReAct (LangGraph):**
+- `START` → `agent_node` (Gemini 3 Flash con tools)
+- `agent_node` → `should_continue?`
+  - Tiene `tool_calls` → `tool_node` (ejecuta search) → `agent_node` (loop)
+  - No tiene `tool_calls` → `END` (responde al usuario)
+
+**Tool `search_properties`:**
+- Wrappea el pipeline completo: QueryParser → Searcher (normalización → filtros → embed → vector search → desambiguación)
+- Retorna JSON con: results, parsed_filters, disambiguation, state_results, metrics
+- El agente recibe un resumen + datos para razonar; el frontend recibe resultados completos via SSE
+
+**Memoria:**
+- `MemorySaver` (LangGraph in-memory checkpointer) por `thread_id` = `session_id`
+- Acumula contexto entre turnos: "terreno en el centro" + "en Quintana Roo" → "terreno en el centro en Quintana Roo"
+
+**Regla clave del agente:**
+- El agente NUNCA reformula el query del usuario. Pasa el texto EXACTO al tool `search_properties`.
+- El parser downstream (QueryParser) se encarga de interpretar ubicaciones, abreviaciones, calles, etc.
+
+**SSE Events emitidos por `/chat`:**
+
+| Evento | Data | Propósito |
+|--------|------|-----------|
+| `session` | `{session_id}` | ID de sesión para continuidad |
+| `token` | string | Token de texto del LLM (streaming) |
+| `tool_start` | `{name, args}` | El agente invoca búsqueda |
+| `results` | `PropertyResult[]` | Resultados de búsqueda |
+| `filters` | `ParsedQuery` | Filtros extraídos |
+| `disambiguation` | `DisambiguationInfo[]` | Datos de desambiguación |
+| `state_results` | `{estado: PropertyResult[]}` | Resultados por estado |
+| `metrics` | `SearchMetrics` | Métricas de la búsqueda |
+| `done` | `""` | Stream completo |
+| `error` | string | Error |
 
 ### Estrategia de búsqueda: unified must + semántica
 
@@ -271,8 +367,8 @@ Query usuario
 - **on_disk_payload**: payload en disco, vectores en RAM
 - **Sharding**: NO necesario hasta 5M+ vectores
 
-### Query parsing con Gemini Flash / GPT-4o-mini
-Usar structured output / function calling para extraer filtros del query.
+### Query parsing con Gemini 3 Flash
+Usar structured output para extraer filtros del query.
 
 **ParsedQuery soporta multi-valor**:
 - `cities: list[str]` — múltiples ciudades ("gdl, zapopan, tlajo")
@@ -299,11 +395,52 @@ Si se necesita en el futuro: Cohere Rerank 3.5 o BGE-reranker-v2-m3.
 ## Fases del proyecto
 
 1. **Fase 1 — Backend base** ✅: Proyecto uv, FastAPI, modelos Pydantic, embedding providers, Qdrant manager
-2. **Fase 2 — Ingesta** ✅: Excel loader, location normalizer, indexer, endpoint POST /ingest
-3. **Fase 3 — Búsqueda** ✅: LLM query parsing multi-valor + filtros must/should + MatchText en address/title + búsqueda vectorial
-4. **Fase 4 — Frontend** ✅: Playground React 19 + Vite + Shadcn/ui con gráfica de similitud
-5. **Fase 5 — Mejoras**: Sparse vectors BM25 + RRF fusion, reranking, paginación
-6. **Fase 6 — Deploy** ✅: Railway (backend) + Vercel (frontend) + Qdrant Cloud
+2. **Fase 2 — Ingesta** ✅: Excel loader, location normalizer, indexer, endpoint POST /ingest (8,803 propiedades)
+3. **Fase 3 — Búsqueda** ✅: LLM query parsing multi-valor + filtros unified must + MatchText en address/title + desambiguación automática
+4. **Fase 4 — Frontend playground** ✅: React 19 + Vite + Shadcn/ui con analytics y desambiguación clickeable
+5. **Fase 4.5 — Chat conversacional** ✅: Agente LangGraph ReAct + Gemini 3 Flash + SSE streaming + UI split-screen
+6. **Fase 5 — Mejoras**: Sparse vectors BM25 + RRF fusion, reranking, paginación, quantization
+7. **Fase 6 — Deploy** ✅: Railway (backend) + Vercel (frontend) + Qdrant Cloud
+
+---
+
+## Endpoints
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/health` | Health check del servidor |
+| GET | `/health/qdrant` | Estado de las colecciones en Qdrant |
+| GET | `/models` | Lista de modelos de embedding soportados |
+| POST | `/ingest` | Indexar propiedades del Excel en Qdrant |
+| POST | `/search` | Búsqueda single-shot en lenguaje natural (Playground) |
+| POST | `/chat` | Chat conversacional via SSE streaming |
+| GET | `/chat/{id}/history` | Historial de una sesión de chat |
+| DELETE | `/chat/{id}` | Borrar sesión de chat |
+| GET | `/docs` | Swagger UI |
+
+---
+
+## Variables de entorno
+
+```bash
+# .env (basado en .env.example)
+GEMINI_API_KEY=AI...              # Requerido (embeddings, query parser, agente)
+OPENAI_API_KEY=sk-...             # Opcional (solo si usas modelos OpenAI)
+DEFAULT_EMBEDDING_MODEL=gemini    # gemini | openai-small | openai-large
+
+# Agente conversacional
+AGENT_MODEL=gemini-3-flash-preview
+
+# Qdrant local (desarrollo)
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+
+# Qdrant Cloud (producción — si se configura, ignora host/port)
+QDRANT_URL=https://xxx.cloud.qdrant.io:6333
+QDRANT_API_KEY=tu-api-key
+
+CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+```
 
 ---
 
@@ -330,10 +467,17 @@ uv add <paquete>
 uvicorn main:app --reload
 
 # Indexar propiedades (con el backend corriendo)
-curl -X POST "http://localhost:8000/ingest?model=openai-small"
 curl -X POST "http://localhost:8000/ingest?model=gemini"
 curl -X POST "http://localhost:8000/ingest?all_models=true"
 
 # Verificar indexación
 curl http://localhost:8000/health/qdrant
+
+# Probar chat (SSE streaming)
+curl -N -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "terreno en el centro", "model": "gemini"}'
+
+# Frontend
+cd frontend && npm install && npm run dev  # http://localhost:5173
 ```
