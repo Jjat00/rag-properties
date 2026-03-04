@@ -35,7 +35,7 @@ Aplica para 8K y 100K+. Named vectors solo se justificarían para modalidades di
 3 colecciones para A/B testing:
 - `properties_openai_small` (1536d)
 - `properties_openai_large` (3072d)
-- `properties_gemini` (3072d)
+- `properties_gemini` (3072d) — **default**
 
 Después de determinar ganador → consolidar a 1 colección.
 
@@ -58,7 +58,7 @@ Después de determinar ganador → consolidar a 1 colección.
    - Cubre: CDMX/DF, Edomex, Q.Roo, acentos, abreviaciones comunes
    - Costo: cero
 
-2. **LLM parser** (Gemini Flash):
+2. **LLM parser** (Gemini 3 Flash):
    - Resuelve ambigüedades ("México" solo → contexto)
    - Normaliza variantes no cubiertas por diccionario
    - Recibe lista de nombres canónicos en el system prompt
@@ -89,6 +89,162 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 
 ---
 
+## Agente Conversacional (Fase 4.5)
+
+### Por qué LangGraph ahora
+
+CLAUDE.md original decía "no LangGraph" porque el flujo de búsqueda era lineal (query → parse → search).
+**El chat conversacional SÍ justifica LangGraph**: loop tool-calling, memoria multi-turno, streaming.
+El endpoint `/search` (playground) sigue siendo FastAPI puro, sin LangGraph.
+
+### Arquitectura del agente
+
+```
+┌─ POST /chat (SSE) ──────────────────────────────────┐
+│                                                      │
+│  User message                                        │
+│       ↓                                              │
+│  ┌──────────────┐   tool_calls?   ┌───────────────┐  │
+│  │  agent_node   │ ────────────→  │  tool_node    │  │
+│  │ (Gemini 3     │ ←────────────  │ (search_      │  │
+│  │  Flash +      │  tool results  │  properties)  │  │
+│  │  tools bound) │                └───────────────┘  │
+│  └──────────────┘                                    │
+│       ↓ no tool_calls                                │
+│  Respuesta texto (streaming SSE token por token)     │
+│       ↓                                              │
+│  Frontend: chat panel (60%) + properties panel (40%) │
+└──────────────────────────────────────────────────────┘
+```
+
+### Modelos LLM usados
+
+| Uso | Modelo | Provider | Configuración |
+|-----|--------|----------|---------------|
+| Embeddings (default) | `gemini-embedding-001` | Google Gemini | 3072d, cosine |
+| Query parsing | `gemini-3-flash-preview` | Google Gemini | temp=0, structured output |
+| Agente conversacional | `gemini-3-flash-preview` | Google Gemini | temp=0.3, tool calling |
+
+### Decisiones del agente
+
+| Decisión | Elección | Razón |
+|----------|----------|-------|
+| Framework | LangGraph (ReAct) | Loop tool-calling nativo, checkpointer, streaming |
+| LLM | Gemini 3 Flash | Consistencia con stack, tool calling robusto |
+| Streaming | SSE (sse-starlette) | Token por token como ChatGPT |
+| Memoria | MemorySaver (in-memory) | Checkpointer built-in, sin DB extra |
+| Query passthrough | Verbatim | El agente pasa el query del usuario EXACTO al tool; el QueryParser interpreta |
+
+### Regla clave del prompt
+
+**El agente NUNCA reformula el query del usuario.** Lo pasa tal cual a `search_properties`.
+El QueryParser downstream tiene toda la inteligencia para interpretar:
+- Calles mexicanas (Illinois, Masaryk, Alfonso Nápoles)
+- Colonias (Andares, Puerta de Hierro, Valle Real)
+- Múltiples ubicaciones ("gdl, zapopan, tlajo")
+- Abreviaciones y errores ortográficos
+
+Si el agente reformula, pierde información que el parser sí entiende.
+
+### SSE Events
+
+| Evento | Data | Frontend |
+|--------|------|----------|
+| `session` | `{session_id}` | Guardar ID para continuidad |
+| `token` | string | Agregar al bubble del assistant |
+| `tool_start` | `{name, args}` | Mostrar "Buscando..." |
+| `results` | `PropertyResult[]` | Actualizar panel de propiedades |
+| `filters` | `ParsedQuery` | Mostrar chips de filtros |
+| `disambiguation` | `DisambiguationInfo[]` | Mostrar badges de desambiguación |
+| `state_results` | `{estado: PropertyResult[]}` | Pre-fetched por estado |
+| `metrics` | `SearchMetrics` | Panel debug (colapsable) |
+| `done` | `""` | Habilitar input |
+| `error` | string | Mostrar error |
+
+### Frontend Chat
+
+- **Layout**: Split-screen 60% chat / 40% propiedades (desktop). Stacked en mobile.
+- **Chat panel**: Lista de mensajes scrollable + textarea con Enter-to-send
+- **Message bubbles**: User (derecha, azul) / Assistant (izquierda, gris) con markdown rendering
+- **Properties panel**: FilterChips + PropertyCards (reutiliza componentes existentes) + debug colapsable
+- **Toggle**: Chat / Playground en la navbar. Chat es la vista default.
+
+### Dependencias agregadas (Fase 4.5)
+
+**Backend** (via `uv add`):
+- `langchain-core` — Abstracciones de mensajes y tools
+- `langgraph` — StateGraph, MemorySaver, ReAct loop
+- `langchain-google-genai` — ChatGoogleGenerativeAI con tool calling
+- `sse-starlette` — EventSourceResponse para SSE streaming
+
+**Frontend** (via `npm install`):
+- `react-markdown` — Renderizar markdown en burbujas del assistant
+
+---
+
+## Estrategia de búsqueda: unified must + semántica
+
+```
+Query usuario
+    → Capa 1: Diccionario estático normaliza ubicaciones (múltiples ciudades soportadas)
+    → Capa 2: LLM parser extrae filtros + query semántico
+       - cities[], neighborhoods[], property_types[] (listas para multi-valor)
+       - street (calle detectada en el query)
+       - Prompt basado en datos reales del catálogo (80 colonias top, calles frecuentes, municipios)
+    → Qdrant filtra con must unificado:
+       - must: city (MatchAny), state, property_type (MatchAny), operation, rangos numéricos
+       - must (texto): Filter(should=[address, neighborhood, title] MatchText) para street y neighborhoods
+         → Busca en los 3 campos TEXT con OR: no importa si el LLM clasifica como calle o colonia
+    → Desambiguación automática:
+       - Estado: facet() descubre estados, pre-fetch top-K por estado, conteos reales (no catálogo)
+       - Colonia: conteo desde resultados cuando hay street
+       - Tipo: count() por variante cuando hay aliases expandidos
+    → Búsqueda vectorial dense con query COMPLETO del usuario
+    → Retorna top-k propiedades + state_results pre-fetched
+```
+
+**Filtros de texto (street/neighborhoods)**:
+- Tanto street como neighborhoods buscan en los 3 campos TEXT: address, neighborhood, title
+- Se usa `Filter(should=[...3 MatchText...])` anidado dentro de `must`
+- Esto garantiza que "Pueblo Cayaco" se encuentra sea que esté en address, neighborhood o title
+- El LLM no necesita clasificar perfectamente: el sistema busca en todos los campos
+
+### Qdrant: Configuración de colecciones
+- **Una colección por modelo de embedding** (ej: `properties_openai_small`, `properties_openai_large`, `properties_gemini`)
+- Cada colección tiene su vector dense con las dimensiones correspondientes
+- **Payload indexes** (crear ANTES de subir datos):
+  - `city` (keyword) — para filtrar por ciudad (normalizado)
+  - `state` (keyword) — para filtrar por estado (normalizado)
+  - `neighborhood` (text) — full-text index para partial matching (must, OR con address/title)
+  - `address` (text, MULTILINGUAL) — para MatchText de calles (must, OR con neighborhood/title)
+  - `title` (text, MULTILINGUAL) — para MatchText de keywords en título (must, OR con address/neighborhood)
+  - `property_type` (keyword) — casa, departamento, terreno, etc.
+  - `operation` (keyword) — sale, rent
+  - `bedrooms` (integer) — número de recámaras
+  - `bathrooms` (integer) — número de baños
+  - `price` (float) — para rangos de precio
+  - `surface` (float) — superficie total m²
+  - `condition` (keyword) — Bueno, Excelente, etc.
+
+### Query parsing con Gemini 3 Flash
+
+Structured output JSON para extraer filtros del query.
+
+**ParsedQuery soporta multi-valor**:
+- `cities: list[str]` — múltiples ciudades ("gdl, zapopan, tlajo")
+- `neighborhoods: list[str]` — múltiples colonias ("andares, puerta de hierro")
+- `property_types: list[str]` — múltiples tipos ("bodega o nave")
+- `street: str | None` — calle detectada ("calle alfonso nápoles")
+
+El LLM parser extrae listas cuando el usuario menciona múltiples valores separados por comas, "y", "o".
+El diccionario estático resuelve cada ciudad individualmente y las une en un solo MatchAny.
+
+### Reranking: NO por ahora
+Con filtros estructurados + dense search, es suficiente para el MVP.
+Si se necesita en el futuro: Cohere Rerank 3.5 o BGE-reranker-v2-m3.
+
+---
+
 ## Fases de implementación
 
 ### Fase 1 — Backend base ✅
@@ -112,32 +268,39 @@ Se agrega como named vector a colecciones existentes + RRF fusion.
 - [x] Verificado: 8803 propiedades cargadas, states canonicalizados correctamente
 
 ### Fase 3 — Búsqueda ✅
-- [x] `search/query_parser.py`: Gemini Flash con structured output → ParsedQuery (cities[], neighborhoods[], property_types[], street, state, bedrooms, bathrooms, price, operation, semantic_query, clean_query)
+- [x] `search/query_parser.py`: Gemini 3 Flash con structured output → ParsedQuery
 - [x] LLM prompt basado en datos reales del catálogo: 27 estados, 32 municipios, 80 colonias top, calles frecuentes
-- [x] Reglas de extracción: calle vs colonia basado en lista de colonias del catálogo; nombres compuestos; no inferir neighborhood desde street ni state desde neighborhood
+- [x] Reglas de extracción: calle vs colonia basado en lista de colonias del catálogo
 - [x] `search/searcher.py`: filtros unified must + vector search con query completo
 - [x] Multi-valor: cities[], neighborhoods[], property_types[] con MatchAny por unión de aliases
-- [x] Texto unificado: street y neighborhoods buscan en los 3 campos TEXT (address, neighborhood, title) con OR anidado — no importa clasificación del LLM
-- [x] TEXT indexes en address y title (MULTILINGUAL tokenizer) para búsqueda tokenizada
-- [x] Desambiguación automática: facet por estado (pre-fetch top-K por estado con conteos reales), conteo por colonia desde resultados, count() por tipo
-- [x] `state_results: dict[str, list[PropertyResult]]` — resultados pre-fetched por estado para toggle instantáneo en frontend
-- [x] Aliases faltantes: zapopan, tlajomulco/tlajo, tonalá, tlaquepaque, san pedro/spgg
-- [x] Endpoint POST `/search` con query en lenguaje natural, modelo y top_k
-- [x] SearchMetrics en respuesta: scores de similitud, filtros aplicados, tiempo de respuesta
-- [x] Query parser actualizado a `gemini-2.0-flash-preview` (gemini-3-flash-preview)
-- [x] Limpieza de "null" literal en direcciones del Excel (`excel_loader.py`)
+- [x] Texto unificado: street y neighborhoods buscan en 3 campos TEXT con OR anidado
+- [x] TEXT indexes en address y title (MULTILINGUAL tokenizer)
+- [x] Desambiguación automática: facet por estado, conteo por colonia, count() por tipo
+- [x] `state_results: dict[str, list[PropertyResult]]` — pre-fetched por estado
+- [x] Endpoint POST `/search`
 
-### Fase 4 — Frontend ✅
+### Fase 4 — Frontend Playground ✅
 - [x] Playground web: React 19 + Vite 7 + Shadcn/ui + Tailwind v4 (dark theme)
 - [x] Barra de búsqueda con selección de modelo y top_k
-- [x] Cards de propiedades con precio, ubicación, atributos y score de similitud
-- [x] Loading skeleton mientras carga
-- [x] Gráfica de similitud interactiva (Recharts + d3-force) — scatterplot con zoom/pan
-- [x] Analytics: distribución de scores, histograma, métricas de búsqueda
-- [x] Manejo de errores y estados vacíos
-- [x] Desambiguación clickeable: badges por estado (toggle pre-fetched), tipo y colonia (filtro client-side)
-- [x] Filas separadas por campo en desglose (Estado / Tipo / Colonia)
-- [x] Conteos de badges respetan estado seleccionado (pasa baseResults, no data.results)
+- [x] Cards de propiedades con precio, ubicación, atributos y score
+- [x] Gráfica de similitud interactiva (Recharts + d3-force)
+- [x] Analytics: distribución de scores, histograma, métricas
+- [x] Desambiguación clickeable: badges por estado, tipo y colonia
+
+### Fase 4.5 — Chat Conversacional ✅
+- [x] Backend: módulo `agent/` con LangGraph ReAct (state, prompt, tools, graph, session)
+- [x] Tool `search_properties` que wrappea el pipeline de búsqueda existente
+- [x] Agente Gemini 3 Flash con tool calling y memoria in-memory (MemorySaver)
+- [x] Endpoint POST `/chat` con SSE streaming (token, results, filters, disambiguation, metrics)
+- [x] Endpoint GET `/chat/{id}/history` y DELETE `/chat/{id}`
+- [x] Frontend: vista Chat con split-screen (60% chat, 40% propiedades)
+- [x] SSE stream parser con callbacks tipados (`chat-api.ts`)
+- [x] Hook `useChat` para estado del chat + streaming
+- [x] Componentes: ChatInput, ChatMessage (con markdown), ChatPanel, PropertiesPanel, ChatView
+- [x] Toggle Chat/Playground en navbar
+- [x] Fix: Gemini devuelve content como lista de partes (no string) → extracción correcta
+- [x] Fix: Agent prompt reforzado para pasar query verbatim al tool (no reformular)
+- [x] Default embedding model cambiado a `gemini`
 
 ### Fase 5 — Mejoras (pendiente)
 - [ ] Sparse vectors BM25 + RRF hybrid search
