@@ -429,8 +429,12 @@ class Searcher:
         query_vector: list[float],
         base_filter: Filter | None,
         k: int,
-    ) -> tuple[str, list[PropertyResult]]:
-        """Run a vector search restricted to a specific state value."""
+    ) -> tuple[str, list[PropertyResult], int]:
+        """Run a vector search restricted to a specific state value.
+
+        Returns (state, results, total_count) where total_count is the real
+        number of matching properties in that state (not limited by top_k).
+        """
         state_condition = FieldCondition(key="state", match=MatchValue(value=state))
         must = list(base_filter.must) if base_filter and base_filter.must else []
         # Remove any existing state must (shouldn't exist, but be safe)
@@ -440,14 +444,21 @@ class Searcher:
             must=must,
             should=base_filter.should if base_filter and base_filter.should else None,
         )
-        results = await self._client.query_points(
-            collection_name=self._provider.collection_name,
-            query=query_vector,
-            query_filter=state_filter,
-            limit=k,
-            with_payload=True,
+        results, count_result = await asyncio.gather(
+            self._client.query_points(
+                collection_name=self._provider.collection_name,
+                query=query_vector,
+                query_filter=state_filter,
+                limit=k,
+                with_payload=True,
+            ),
+            self._client.count(
+                collection_name=self._provider.collection_name,
+                count_filter=state_filter,
+                exact=True,
+            ),
         )
-        return state, [self._format_point(p) for p in results.points]
+        return state, [self._format_point(p) for p in results.points], count_result.count
 
     async def _facet_field(
         self,
@@ -528,6 +539,13 @@ class Searcher:
             limit=k,
             with_payload=True,
         )
+        # Get total count of matching points (not limited by top_k)
+        total_count_result = await self._client.count(
+            collection_name=self._provider.collection_name,
+            count_filter=qdrant_filter,
+            exact=True,
+        )
+        total_matching = total_count_result.count
         search_time_ms = (time.perf_counter() - search_start) * 1000
 
         # Disambiguation: facet ambiguous fields in parallel with the main search
@@ -558,14 +576,15 @@ class Searcher:
                     self._search_for_state(b.value, query_vector, qdrant_filter, k)
                     for b in state_facet.buckets
                 ])
-                state_results = {s: r for s, r in state_searches if r}
+                state_results = {s: r for s, r, _c in state_searches if r}
+                state_counts = {s: c for s, _r, c in state_searches}
 
-            # Update state facet counts to reflect actual filtered results.
-            # The facet uses a relaxed filter (all types), but the user wants
-            # counts that match what clicking the badge shows (filtered results).
+            # Update state facet counts with real counts from Qdrant count().
+            # The facet uses a relaxed filter (all types), but we want counts
+            # that match the actual filtered results per state.
             if state_results:
                 updated_buckets = [
-                    FacetBucket(value=s, count=len(r))
+                    FacetBucket(value=s, count=state_counts.get(s, len(r)))
                     for s, r in state_results.items()
                     if r
                 ]
@@ -611,7 +630,7 @@ class Searcher:
             parsed_filters=parsed,
             filters_applied=filters_applied,
             results=properties,
-            total=len(properties),
+            total=total_matching,
             metrics=metrics,
             disambiguation=disambiguation,
             state_results=state_results,

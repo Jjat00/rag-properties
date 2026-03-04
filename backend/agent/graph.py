@@ -26,20 +26,22 @@ def create_agent(
     embedding_registry: EmbeddingRegistry,
     qdrant_manager: QdrantManager,
     model: EmbeddingModel | None = None,
-    top_k: int = 10,
 ):
     """Create and compile the conversational agent graph.
 
-    Returns a compiled StateGraph with MemorySaver checkpointer.
+    Returns a tuple of (compiled_graph, runtime_config).
+    runtime_config is a mutable dict that the /chat endpoint updates per-request
+    to dynamically control top_k.
     """
     embedding_model = model or settings.default_embedding_model
+    runtime_config: dict = {"top_k": settings.search_top_k}
 
     search_tool = create_search_tool(
         query_parser=query_parser,
         embedding_registry=embedding_registry,
         qdrant_manager=qdrant_manager,
         model=embedding_model,
-        top_k=top_k,
+        runtime_config=runtime_config,
     )
     tools = [search_tool]
 
@@ -75,4 +77,4 @@ def create_agent(
     graph.add_edge("tools", "agent")
 
     checkpointer = MemorySaver()
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile(checkpointer=checkpointer), runtime_config

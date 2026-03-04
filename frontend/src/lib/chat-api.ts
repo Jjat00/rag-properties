@@ -13,7 +13,7 @@ interface ChatCallbacks {
   onSession?: (sessionId: string) => void;
   onToken?: (token: string) => void;
   onToolStart?: (name: string, args: Record<string, unknown>) => void;
-  onResults?: (results: PropertyResult[]) => void;
+  onResults?: (results: PropertyResult[], total: number) => void;
   onFilters?: (filters: ParsedQuery) => void;
   onDisambiguation?: (disambiguation: DisambiguationInfo[]) => void;
   onStateResults?: (stateResults: Record<string, PropertyResult[]>) => void;
@@ -118,7 +118,7 @@ function handleEvent(
       }
       case "results": {
         const data = JSON.parse(rawData);
-        callbacks.onResults?.(data);
+        callbacks.onResults?.(data.items, data.total);
         break;
       }
       case "filters": {

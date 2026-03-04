@@ -33,12 +33,13 @@ qdrant_manager: QdrantManager
 embedding_registry: EmbeddingRegistry
 query_parser: QueryParser
 agent_graph: Any
+agent_runtime_config: dict
 session_manager: SessionManager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global qdrant_manager, embedding_registry, query_parser, agent_graph, session_manager
+    global qdrant_manager, embedding_registry, query_parser, agent_graph, agent_runtime_config, session_manager
 
     qdrant_manager = QdrantManager(
         host=settings.qdrant_host,
@@ -52,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await qdrant_manager.ensure_all_collections()
 
-    agent_graph = create_agent(
+    agent_graph, agent_runtime_config = create_agent(
         settings=settings,
         query_parser=query_parser,
         embedding_registry=embedding_registry,
@@ -202,6 +203,9 @@ async def chat(request: ChatRequest):
 
     config = {"configurable": {"thread_id": session.session_id}}
 
+    # Update runtime config so the search tool uses the request's top_k
+    agent_runtime_config["top_k"] = request.top_k
+
     async def event_generator():
         # Emit session_id first so frontend can track it
         yield {
@@ -265,7 +269,11 @@ async def chat(request: ChatRequest):
                                 yield {
                                     "event": "results",
                                     "data": json.dumps(
-                                        parsed["results"], ensure_ascii=False
+                                        {
+                                            "items": parsed["results"],
+                                            "total": parsed.get("total", len(parsed["results"])),
+                                        },
+                                        ensure_ascii=False,
                                     ),
                                 }
                             if "parsed_filters" in parsed:

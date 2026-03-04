@@ -20,9 +20,14 @@ def create_search_tool(
     embedding_registry: EmbeddingRegistry,
     qdrant_manager: QdrantManager,
     model: EmbeddingModel,
-    top_k: int = 10,
+    runtime_config: dict | None = None,
 ):
-    """Factory that creates a search_properties tool with runtime dependencies."""
+    """Factory that creates a search_properties tool with runtime dependencies.
+
+    runtime_config is a mutable dict that the /chat endpoint updates per-request.
+    Supported keys: top_k (int).
+    """
+    _runtime = runtime_config or {"top_k": 10}
 
     @tool
     async def search_properties(query: str) -> str:
@@ -35,7 +40,8 @@ def create_search_tool(
         Args:
             query: Natural language search query, e.g. "casa de 3 recámaras en Polanco menos de 10 millones"
         """
-        logger.info("search_properties called with query: %s", query)
+        top_k = _runtime.get("top_k", 10)
+        logger.info("search_properties called with query: %s (top_k=%d)", query, top_k)
         parse_start = time.perf_counter()
         parsed = await query_parser.parse(query)
         parse_time_ms = (time.perf_counter() - parse_start) * 1000

@@ -8,12 +8,14 @@ import type {
   SearchMetrics,
 } from "@/types/api";
 import { Building2, Clock, Filter, ChevronDown, ChevronUp } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 interface PropertiesPanelProps {
   results: PropertyResult[];
+  totalResults: number;
   filters: ParsedQuery | null;
   disambiguation: DisambiguationInfo[];
+  stateResults: Record<string, PropertyResult[]>;
   metrics: SearchMetrics | null;
   isSearching: boolean;
 }
@@ -31,12 +33,45 @@ function FilterChip({ label, value }: { label: string; value: string }) {
 
 export function PropertiesPanel({
   results,
+  totalResults,
   filters,
   disambiguation,
+  stateResults,
   metrics,
   isSearching,
 }: PropertiesPanelProps) {
   const [debugOpen, setDebugOpen] = useState(false);
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+
+  // Reset state filter when new results come in (new search)
+  useEffect(() => {
+    setSelectedState(null);
+  }, [results]);
+
+  const stateDisambiguation = disambiguation.find((d) => d.field === "state");
+  const hasStateResults = stateDisambiguation && Object.keys(stateResults).length > 0;
+
+  // Sum of all state bucket counts as fallback for total
+  const stateBucketsTotal = stateDisambiguation
+    ? stateDisambiguation.buckets.reduce((sum, b) => sum + b.count, 0)
+    : 0;
+  const effectiveTotal = totalResults || stateBucketsTotal;
+
+  // Determine which results to display
+  const displayResults = useMemo(() => {
+    if (selectedState && stateResults[selectedState]) {
+      return stateResults[selectedState];
+    }
+    return results;
+  }, [results, stateResults, selectedState]);
+
+  const displayTotal = useMemo(() => {
+    if (selectedState && stateDisambiguation) {
+      const bucket = stateDisambiguation.buckets.find((b) => b.value === selectedState);
+      return bucket?.count ?? displayResults.length;
+    }
+    return effectiveTotal;
+  }, [effectiveTotal, selectedState, stateDisambiguation, displayResults.length]);
 
   return (
     <div className="flex flex-col h-full border-l border-border bg-background/50">
@@ -47,9 +82,11 @@ export function PropertiesPanel({
           <span className="text-sm font-medium text-foreground">
             Propiedades
           </span>
-          {results.length > 0 && (
+          {displayResults.length > 0 && (
             <Badge variant="secondary" className="text-xs">
-              {results.length}
+              {displayTotal > displayResults.length
+                ? `${displayResults.length} de ${displayTotal}`
+                : displayResults.length}
             </Badge>
           )}
         </div>
@@ -113,16 +150,42 @@ export function PropertiesPanel({
             </div>
           )}
 
-          {/* Disambiguation badges */}
+          {/* Disambiguation badges — clickable for state */}
           {disambiguation.length > 0 && (
             <div className="space-y-2">
               {disambiguation.map((d) => (
                 <div key={d.field} className="flex flex-wrap gap-1.5">
+                  {d.field === "state" && hasStateResults && (
+                    <Badge
+                      variant="outline"
+                      className={`text-xs cursor-pointer transition-colors ${
+                        selectedState === null
+                          ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/15"
+                      }`}
+                      onClick={() => setSelectedState(null)}
+                    >
+                      Todas ({effectiveTotal})
+                    </Badge>
+                  )}
                   {d.buckets.map((b) => (
                     <Badge
                       key={b.value}
                       variant="outline"
-                      className="text-xs bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      className={`text-xs ${
+                        d.field === "state" && hasStateResults
+                          ? `cursor-pointer transition-colors ${
+                              selectedState === b.value
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                : "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/15"
+                            }`
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      }`}
+                      onClick={
+                        d.field === "state" && hasStateResults
+                          ? () => setSelectedState(selectedState === b.value ? null : b.value)
+                          : undefined
+                      }
                     >
                       {b.value} ({b.count})
                     </Badge>
@@ -133,9 +196,9 @@ export function PropertiesPanel({
           )}
 
           {/* Results */}
-          {results.length > 0 ? (
+          {displayResults.length > 0 ? (
             <div className="space-y-3">
-              {results.map((r, i) => (
+              {displayResults.map((r, i) => (
                 <PropertyCard key={r.id ?? i} property={r} index={i} />
               ))}
             </div>

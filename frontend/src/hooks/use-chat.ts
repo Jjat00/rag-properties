@@ -23,6 +23,7 @@ export function useChat() {
   const [currentDisambiguation, setCurrentDisambiguation] = useState<DisambiguationInfo[]>([]);
   const [currentStateResults, setCurrentStateResults] = useState<Record<string, PropertyResult[]>>({});
   const [currentMetrics, setCurrentMetrics] = useState<SearchMetrics | null>(null);
+  const [totalResults, setTotalResults] = useState<number>(0);
   const abortRef = useRef<AbortController | null>(null);
   const assistantIdRef = useRef<string>("");
 
@@ -84,8 +85,9 @@ export function useChat() {
               ),
             );
           },
-          onResults: (results) => {
+          onResults: (results, total) => {
             setCurrentResults(results);
+            setTotalResults(total);
             setIsSearching(false);
             setMessages((prev) =>
               prev.map((m) =>
@@ -162,6 +164,7 @@ export function useChat() {
     setIsStreaming(false);
     setIsSearching(false);
     setCurrentResults([]);
+    setTotalResults(0);
     setCurrentFilters(null);
     setCurrentDisambiguation([]);
     setCurrentStateResults({});
@@ -174,6 +177,7 @@ export function useChat() {
     isStreaming,
     isSearching,
     currentResults,
+    totalResults,
     currentFilters,
     currentDisambiguation,
     currentStateResults,

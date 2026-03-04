@@ -25,8 +25,10 @@ export function ChatView({ models, defaultModel }: ChatViewProps) {
     isStreaming,
     isSearching,
     currentResults,
+    totalResults,
     currentFilters,
     currentDisambiguation,
+    currentStateResults,
     currentMetrics,
     sendMessage,
     resetChat,
@@ -75,8 +77,10 @@ export function ChatView({ models, defaultModel }: ChatViewProps) {
         <div className="hidden lg:flex lg:w-2/5 min-h-0">
           <PropertiesPanel
             results={currentResults}
+            totalResults={totalResults}
             filters={currentFilters}
             disambiguation={currentDisambiguation}
+            stateResults={currentStateResults}
             metrics={currentMetrics}
             isSearching={isSearching}
           />
