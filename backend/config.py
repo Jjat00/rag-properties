@@ -23,6 +23,10 @@ COLLECTION_NAMES: dict[EmbeddingModel, str] = {
 }
 
 
+MULTIMODAL_COLLECTION = "properties_multimodal"
+MULTIMODAL_DIMENSIONS = 3072
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -38,6 +42,8 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     excel_path: str = "data/properties.xlsx"
+    multimodal_json_path: str = "data/properties.json"
+    images_dir: str = "data/images"
     search_top_k: int = 10
     query_parser_model: str = "gemini-3-flash-preview"
     agent_model: str = "gemini-3-flash-preview"
