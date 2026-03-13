@@ -433,7 +433,7 @@ class MultimodalSearchRequest(BaseModel):
 
 @app.post("/multimodal/search")
 async def multimodal_search(request: MultimodalSearchRequest) -> MultimodalSearchResult:
-    """Multimodal semantic search with RRF fusion over text + image vectors."""
+    """Multimodal semantic search with fused text+image embeddings (cosine similarity)."""
     searcher = MultimodalSearcher(
         client=qdrant_manager.client,
         provider=multimodal_provider,
@@ -464,7 +464,7 @@ async def multimodal_search_by_image(
     """Search properties by uploading an image (cross-modal search).
 
     The image is embedded with gemini-embedding-2-preview and searched
-    against both text and image vectors using RRF fusion.
+    against fused embeddings using direct cosine similarity.
     """
     if file.content_type not in _ALLOWED_IMAGE_TYPES:
         raise HTTPException(

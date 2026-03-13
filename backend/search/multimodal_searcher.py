@@ -1,7 +1,8 @@
-"""Multimodal semantic search with Qdrant prefetch + RRF fusion.
+"""Multimodal semantic search with direct cosine similarity.
 
-Uses multi-point indexing (1 text point + N image points per property).
-Results are deduplicated by property_id, keeping the best score.
+Uses fused embeddings (text + images in the same 3072d vector space).
+Each property has exactly ONE point, so no deduplication is needed.
+Search is a simple nearest-neighbor lookup — no prefetch or RRF fusion.
 """
 
 import logging
@@ -12,10 +13,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     FieldCondition,
     Filter,
-    Fusion,
-    FusionQuery,
     MatchValue,
-    Prefetch,
     Range,
 )
 
@@ -29,8 +27,6 @@ class MultimodalPropertyResult(BaseModel):
     """A single property from multimodal search."""
 
     score: float
-    matched_point_type: str = "text"  # "text" or "image" — which point scored best
-    matched_image_url: str | None = None  # which specific image matched (if image point)
     id: str | None = None
     firebase_id: str | None = None
     title: str | None = None
@@ -76,7 +72,7 @@ class MultimodalSearchResult(BaseModel):
     metrics: MultimodalSearchMetrics = MultimodalSearchMetrics()
 
 
-def _build_multimodal_filter(
+def _build_filter(
     city: str | None = None,
     state: str | None = None,
     house_type: str | None = None,
@@ -86,7 +82,7 @@ def _build_multimodal_filter(
     min_price: float | None = None,
     max_price: float | None = None,
 ) -> Filter | None:
-    """Build basic Qdrant filters for multimodal search."""
+    """Build Qdrant filters for multimodal search."""
     must: list[FieldCondition] = []
 
     if city:
@@ -122,8 +118,6 @@ def _format_point(point: object) -> MultimodalPropertyResult:
     payload = getattr(point, "payload", None) or {}
     return MultimodalPropertyResult(
         score=getattr(point, "score", 0.0),
-        matched_point_type=payload.get("point_type", "text"),
-        matched_image_url=payload.get("image_url"),
         id=payload.get("id"),
         firebase_id=payload.get("firebase_id"),
         title=payload.get("title"),
@@ -155,28 +149,12 @@ def _format_point(point: object) -> MultimodalPropertyResult:
     )
 
 
-def _deduplicate_by_property(
-    results: list[MultimodalPropertyResult],
-) -> list[MultimodalPropertyResult]:
-    """Group results by property ID, keep the one with the best score.
-
-    Multiple points (text + N images) for the same property may appear
-    in the search results. We keep only the highest-scoring point per property.
-    """
-    best: dict[str, MultimodalPropertyResult] = {}
-    for r in results:
-        prop_id = r.id or ""
-        if prop_id not in best or r.score > best[prop_id].score:
-            best[prop_id] = r
-    # Re-sort by score descending
-    deduped = sorted(best.values(), key=lambda r: r.score, reverse=True)
-    return deduped
-
-
 class MultimodalSearcher:
-    """Multimodal search using Qdrant prefetch + RRF fusion over named vectors.
+    """Multimodal search using direct cosine similarity.
 
-    Results are deduplicated by property_id (best score wins).
+    Since all embeddings (text and images) live in the same vector space,
+    a single cosine search finds the most relevant properties regardless
+    of whether the match is textual or visual.
     """
 
     def __init__(
@@ -202,11 +180,11 @@ class MultimodalSearcher:
         min_price: float | None = None,
         max_price: float | None = None,
     ) -> MultimodalSearchResult:
-        """Search using RRF fusion over text and image named vectors."""
+        """Search using direct cosine similarity against fused embeddings."""
         total_start = time.perf_counter()
         k = top_k or self._top_k
 
-        qdrant_filter = _build_multimodal_filter(
+        qdrant_filter = _build_filter(
             city=city,
             state=state,
             house_type=house_type,
@@ -222,46 +200,23 @@ class MultimodalSearcher:
         query_vector = await self._provider.embed_query(query)
         embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
-        # Fetch more than top_k to account for deduplication
-        fetch_limit = k * 4
+        # Direct cosine search — one point per property, no dedup needed
         search_start = time.perf_counter()
-
         results = await self._client.query_points(
             collection_name=MULTIMODAL_COLLECTION,
-            prefetch=[
-                Prefetch(
-                    query=query_vector,
-                    using="text",
-                    filter=qdrant_filter,
-                    limit=fetch_limit,
-                ),
-                Prefetch(
-                    query=query_vector,
-                    using="image",
-                    filter=qdrant_filter,
-                    limit=fetch_limit,
-                ),
-            ],
-            query=FusionQuery(fusion=Fusion.RRF),
-            limit=fetch_limit,
+            query=query_vector,
+            query_filter=qdrant_filter,
+            limit=k,
             with_payload=True,
         )
-
         search_time_ms = (time.perf_counter() - search_start) * 1000
 
-        # Deduplicate: group by property_id, keep best score
-        all_results = [_format_point(p) for p in results.points]
-        deduped = _deduplicate_by_property(all_results)
-        properties = deduped[:k]
+        properties = [_format_point(p) for p in results.points]
 
-        # Count unique properties (text points only for accurate count)
-        count_filter_conditions = list(qdrant_filter.must) if qdrant_filter and qdrant_filter.must else []
-        count_filter_conditions.append(
-            FieldCondition(key="point_type", match=MatchValue(value="text"))
-        )
+        # Count total matching properties
         count_result = await self._client.count(
             collection_name=MULTIMODAL_COLLECTION,
-            count_filter=Filter(must=count_filter_conditions),
+            count_filter=qdrant_filter,
             exact=True,
         )
 
@@ -288,9 +243,8 @@ class MultimodalSearcher:
     ) -> MultimodalSearchResult:
         """Search properties by uploading an image (cross-modal search).
 
-        Embeds the image as RETRIEVAL_QUERY and searches against both
-        text and image named vectors using RRF fusion.
-        Results are deduplicated by property_id.
+        The image is embedded with RETRIEVAL_QUERY task type and searched
+        against fused embeddings using direct cosine similarity.
         """
         total_start = time.perf_counter()
         k = top_k or self._top_k
@@ -300,41 +254,20 @@ class MultimodalSearcher:
         query_vector = await self._provider.embed_image_query(image_bytes, mime_type)
         embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
-        # Fetch more to account for deduplication
-        fetch_limit = k * 4
+        # Direct cosine search
         search_start = time.perf_counter()
-
         results = await self._client.query_points(
             collection_name=MULTIMODAL_COLLECTION,
-            prefetch=[
-                Prefetch(
-                    query=query_vector,
-                    using="text",
-                    limit=fetch_limit,
-                ),
-                Prefetch(
-                    query=query_vector,
-                    using="image",
-                    limit=fetch_limit,
-                ),
-            ],
-            query=FusionQuery(fusion=Fusion.RRF),
-            limit=fetch_limit,
+            query=query_vector,
+            limit=k,
             with_payload=True,
         )
-
         search_time_ms = (time.perf_counter() - search_start) * 1000
 
-        # Deduplicate by property_id
-        all_results = [_format_point(p) for p in results.points]
-        deduped = _deduplicate_by_property(all_results)
-        properties = deduped[:k]
+        properties = [_format_point(p) for p in results.points]
 
         count_result = await self._client.count(
             collection_name=MULTIMODAL_COLLECTION,
-            count_filter=Filter(must=[
-                FieldCondition(key="point_type", match=MatchValue(value="text"))
-            ]),
             exact=True,
         )
 

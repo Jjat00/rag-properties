@@ -30,8 +30,8 @@ Agent: [refina búsqueda] → "3 casas en ese rango..."
 Búsqueda single-shot con analytics (distribución de scores, gráfica de similitud, comparación de modelos A/B).
 
 ### Multimodal
-Búsqueda semántica con imágenes usando `gemini-embedding-2-preview`. Soporta dos modos:
-- **Búsqueda por texto**: el query se embeddea y se busca contra vectores de texto e imagen con RRF fusion
+Búsqueda semántica con imágenes usando `gemini-embedding-2-preview`. Cada propiedad tiene un **embedding fusionado** (texto + hasta 6 imágenes) en un único espacio vectorial de 3072d. Soporta dos modos:
+- **Búsqueda por texto**: el query se embeddea y se busca por cosine similarity directa contra embeddings fusionados
 - **Búsqueda por imagen**: sube una foto y encuentra propiedades visualmente similares (cross-modal search)
 
 ## Cómo funciona
@@ -105,11 +105,11 @@ rag-properties/
 │   │   ├── indexer.py              # Generar embeddings e indexar en Qdrant
 │   │   ├── json_loader.py          # Leer JSON (MongoDB export) → MultimodalProperty
 │   │   ├── image_downloader.py     # Descargar imágenes de propiedades a disco
-│   │   └── multimodal_indexer.py   # Indexar con named vectors (texto + imagen)
+│   │   └── multimodal_indexer.py   # Indexar con embeddings fusionados (texto + imagen)
 │   └── search/
 │       ├── query_parser.py         # LLM structured output → ParsedQuery
 │       ├── searcher.py             # Búsqueda semántica con filtros
-│       └── multimodal_searcher.py  # Búsqueda multimodal con RRF fusion
+│       └── multimodal_searcher.py  # Búsqueda multimodal con cosine similarity
 ├── frontend/                       # React 19 + Vite + Shadcn (Chat + Playground + Multimodal)
 │   └── src/
 │       ├── components/
@@ -195,9 +195,9 @@ curl http://localhost:8000/multimodal/download-images
 curl -X POST http://localhost:8000/multimodal/ingest
 ```
 
-Esto crea la colección `properties_multimodal` en Qdrant con named vectors:
-- `text` (3072d) — embedding del texto descriptivo
-- `image` (3072d) — embedding agregado de las imágenes (hasta 6 por propiedad)
+Esto crea la colección `properties_multimodal` en Qdrant con un solo vector (3072d cosine).
+Cada propiedad genera UN embedding fusionado que combina texto + hasta 6 imágenes en el
+mismo espacio vectorial de `gemini-embedding-2-preview`.
 
 ### 6. Verificar indexación
 
@@ -241,7 +241,7 @@ CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
 | DELETE | `/chat/{id}` | Borrar sesión de chat |
 | GET | `/multimodal/download-images` | Descargar imágenes de propiedades a disco |
 | POST | `/multimodal/ingest` | Indexar propiedades multimodales (JSON + imágenes) |
-| POST | `/multimodal/search` | Búsqueda multimodal por texto (RRF fusion) |
+| POST | `/multimodal/search` | Búsqueda multimodal por texto (cosine similarity) |
 | POST | `/multimodal/search-by-image` | Búsqueda por imagen (cross-modal) |
 | GET | `/docs` | Swagger UI |
 
@@ -255,7 +255,7 @@ CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
 }
 ```
 
-Embeddea el texto con `gemini-embedding-2-preview` y busca contra vectores de texto e imagen usando RRF fusion.
+Embeddea el texto con `gemini-embedding-2-preview` y busca por cosine similarity directa contra embeddings fusionados (texto + imágenes).
 
 ### POST `/multimodal/search-by-image` (Búsqueda por imagen)
 
@@ -265,7 +265,7 @@ curl -X POST http://localhost:8000/multimodal/search-by-image \
   -F "top_k=10"
 ```
 
-Acepta JPEG, PNG o WebP (max 10MB). Embeddea la imagen como `RETRIEVAL_QUERY` y busca contra ambos named vectors (text + image) con RRF fusion. Encuentra propiedades visualmente similares a la imagen subida.
+Acepta JPEG, PNG o WebP (max 10MB). Embeddea la imagen como `RETRIEVAL_QUERY` y busca por cosine similarity directa contra embeddings fusionados. Encuentra propiedades visualmente similares a la imagen subida.
 
 ### POST `/search` (Playground)
 
@@ -394,6 +394,6 @@ Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
 - [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash + filtros unified must + desambiguación automática
 - [x] **Fase 4** — Frontend playground: React 19 + Vite + Shadcn/ui con analytics y desambiguación clickeable
 - [x] **Fase 4.5** — Chat conversacional: agente LangGraph ReAct + Gemini 3 Flash + SSE streaming + UI split-screen
-- [x] **Fase 4.6** — Búsqueda multimodal: Gemini Embedding 2 (texto + imagen), named vectors, RRF fusion, búsqueda por imagen
+- [x] **Fase 4.6** — Búsqueda multimodal: Gemini Embedding 2 (texto + imagen), embeddings fusionados, cosine similarity, búsqueda por imagen
 - [ ] **Fase 5** — Mejoras: sparse BM25 + RRF, reranking, paginación, quantization
 - [x] **Fase 6** — Deploy: Railway (backend) + Vercel (frontend) + Qdrant Cloud

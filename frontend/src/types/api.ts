@@ -130,8 +130,6 @@ export type ChatEventType =
 
 export interface MultimodalPropertyResult {
   score: number;
-  matched_point_type: "text" | "image";
-  matched_image_url: string | null;
   id: string | null;
   firebase_id: string | null;
   title: string | null;

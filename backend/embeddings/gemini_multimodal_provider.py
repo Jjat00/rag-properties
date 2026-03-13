@@ -1,4 +1,8 @@
-"""Gemini Embedding 2 multimodal provider (text + images)."""
+"""Gemini Embedding 2 multimodal provider (text + images).
+
+All modalities (text, images) share the same 3072d vector space,
+so a text query can find matching images and vice-versa using cosine similarity.
+"""
 
 import asyncio
 import logging
@@ -18,7 +22,9 @@ _MAX_IMAGES_PER_REQUEST = 6
 class GeminiMultimodalProvider:
     """Embedding provider using gemini-embedding-2-preview for text and images.
 
-    NOT a subclass of EmbeddingProvider — different interface (supports images).
+    Key design: all modalities produce vectors in the SAME semantic space.
+    A fused embedding (text + images combined) captures richer semantics
+    than either modality alone.
     """
 
     def __init__(self, api_key: str) -> None:
@@ -50,29 +56,30 @@ class GeminiMultimodalProvider:
         )
         return embeddings[0]
 
-    def _embed_images_individually_sync(self, image_paths: list[Path]) -> list[list[float]]:
-        """Embed each image individually. Returns one vector per image (no averaging)."""
-        paths = image_paths[:_MAX_IMAGES_PER_REQUEST]
-        parts: list[types.Part] = []
-        for path in paths:
+    def _embed_fused_sync(self, text: str, image_paths: list[Path]) -> list[float]:
+        """Create a single fused embedding from text + images.
+
+        Combines text and up to 6 images into one Content with multiple Parts,
+        producing ONE unified embedding that captures both textual description
+        and visual appearance.
+        """
+        parts: list[types.Part] = [types.Part.from_text(text=text)]
+        for path in image_paths[:_MAX_IMAGES_PER_REQUEST]:
             image_bytes = path.read_bytes()
-            parts.append(
-                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-            )
+            mime_type = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+            parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
 
         result = self._client.models.embed_content(
             model=_MODEL_ID,
-            contents=parts,
+            contents=[types.Content(parts=parts)],
             config={"task_type": "RETRIEVAL_DOCUMENT"},
         )
-        return [list(e.values) for e in result.embeddings]
+        return list(result.embeddings[0].values)
 
-    async def embed_images_individually(self, image_paths: list[Path]) -> list[list[float]]:
-        """Embed each image individually. Returns list of vectors (one per image)."""
-        if not image_paths:
-            return []
+    async def embed_fused(self, text: str, image_paths: list[Path]) -> list[float]:
+        """Create a fused embedding from text + images (one vector per property)."""
         return await asyncio.to_thread(
-            partial(self._embed_images_individually_sync, image_paths)
+            partial(self._embed_fused_sync, text, image_paths)
         )
 
     def _embed_image_query_sync(self, image_bytes: bytes, mime_type: str) -> list[float]:
@@ -86,7 +93,7 @@ class GeminiMultimodalProvider:
         return list(result.embeddings[0].values)
 
     async def embed_image_query(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> list[float]:
-        """Embed an uploaded image for cross-modal search against text and image vectors."""
+        """Embed an uploaded image for cross-modal search."""
         return await asyncio.to_thread(
             partial(self._embed_image_query_sync, image_bytes, mime_type)
         )

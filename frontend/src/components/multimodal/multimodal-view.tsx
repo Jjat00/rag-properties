@@ -109,8 +109,8 @@ export function MultimodalView() {
           <div className="text-4xl">🏠</div>
           <h2 className="text-lg font-medium text-foreground">Busqueda Multimodal</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Busca propiedades por texto o sube una imagen. Los resultados combinan similitud
-            de texto e imagenes usando RRF fusion sobre vectores de Gemini Embedding 2.
+            Busca propiedades por texto o sube una imagen. Cada propiedad tiene un embedding
+            fusionado (texto + imagenes) en el mismo espacio vectorial de Gemini Embedding 2.
           </p>
           <div className="flex flex-wrap justify-center gap-2 mt-4">
             {[

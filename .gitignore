@@ -8,3 +8,4 @@ dist/
 qdrant_storage/
 data/*.xlsx
 backend/data/
+data/

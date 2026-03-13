@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { MapPin, Bed, Bath, Ruler, Car, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ImageIcon, Type } from "lucide-react"
+import { MapPin, Bed, Bath, Ruler, Car, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import type { MultimodalPropertyResult } from "@/types/api"
 import { cn, formatPrice } from "@/lib/utils"
@@ -11,15 +11,10 @@ interface MultimodalPropertyCardProps {
 }
 
 export function MultimodalPropertyCard({ property, index }: MultimodalPropertyCardProps) {
-  // Start carousel on the matched image when the best point was an image point
-  const matchedIdx = property.matched_point_type === "image" && property.matched_image_url
-    ? Math.max(0, (property.pictures ?? []).indexOf(property.matched_image_url))
-    : 0
-  const [currentImage, setCurrentImage] = useState(matchedIdx)
+  const [currentImage, setCurrentImage] = useState(0)
   const [expanded, setExpanded] = useState(false)
   const pictures = property.pictures ?? []
   const hasPictures = pictures.length > 0
-  const isImageMatch = property.matched_point_type === "image"
 
   const nextImage = () => {
     if (hasPictures) setCurrentImage((prev) => (prev + 1) % pictures.length)
@@ -72,14 +67,8 @@ export function MultimodalPropertyCard({ property, index }: MultimodalPropertyCa
                 </div>
               </>
             )}
-            {/* Score + match type badges */}
-            <div className="absolute top-2 right-2 flex items-center gap-1">
-              {isImageMatch && (
-                <div className="bg-purple-600/80 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
-                  <ImageIcon className="h-3 w-3" />
-                  imagen
-                </div>
-              )}
+            {/* Score badge */}
+            <div className="absolute top-2 right-2">
               <div className="bg-black/60 text-white text-xs font-mono px-2 py-1 rounded">
                 {(property.score * 100).toFixed(1)}%
               </div>

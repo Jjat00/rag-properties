@@ -90,20 +90,18 @@ class QdrantManager:
             )
 
     async def ensure_multimodal_collection(self) -> None:
-        """Create the multimodal collection with named vectors (text + image)."""
+        """Create the multimodal collection with a single vector.
+
+        All modalities (text + images) share the same 3072d vector space
+        from gemini-embedding-2, so a single vector config suffices.
+        """
         if not await self._client.collection_exists(MULTIMODAL_COLLECTION):
             await self._client.create_collection(
                 collection_name=MULTIMODAL_COLLECTION,
-                vectors_config={
-                    "text": VectorParams(
-                        size=MULTIMODAL_DIMENSIONS,
-                        distance=Distance.COSINE,
-                    ),
-                    "image": VectorParams(
-                        size=MULTIMODAL_DIMENSIONS,
-                        distance=Distance.COSINE,
-                    ),
-                },
+                vectors_config=VectorParams(
+                    size=MULTIMODAL_DIMENSIONS,
+                    distance=Distance.COSINE,
+                ),
             )
 
         multimodal_indexes: dict[str, PayloadSchemaType | TextIndexParams] = {
@@ -126,7 +124,6 @@ class QdrantManager:
             "condition": PayloadSchemaType.KEYWORD,
             "currency": PayloadSchemaType.KEYWORD,
             "parking_lot": PayloadSchemaType.INTEGER,
-            "point_type": PayloadSchemaType.KEYWORD,
             "address": TextIndexParams(
                 type="text",
                 tokenizer=TokenizerType.MULTILINGUAL,
