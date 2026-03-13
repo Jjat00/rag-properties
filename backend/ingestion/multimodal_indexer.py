@@ -1,4 +1,10 @@
-"""Generate text + image embeddings and index multimodal properties into Qdrant."""
+"""Generate text + image embeddings and index multimodal properties into Qdrant.
+
+Strategy: one point per image + one text point per property.
+Each image gets its own point with an individual embedding (no averaging),
+so search matches against specific images (facade, kitchen, etc.) instead
+of a blurred average. Deduplication happens at search time.
+"""
 
 import logging
 import uuid
@@ -29,7 +35,8 @@ async def index_multimodal_properties(
 ) -> int:
     """Generate text + image embeddings and upsert into Qdrant.
 
-    Returns the number of points indexed.
+    Creates one text point per property + one image point per individual image.
+    Returns the total number of points indexed.
     """
     valid: list[MultimodalProperty] = [p for p in properties if p.id and p.embedding_text.strip()]
     skipped = len(properties) - len(valid)
@@ -45,36 +52,52 @@ async def index_multimodal_properties(
     texts = [p.embedding_text for p in valid]
     text_embeddings = await provider.embed_texts(texts)
 
-    # Generate image embeddings one property at a time
-    logger.info("Generating image embeddings...")
-    image_embeddings: list[list[float] | None] = []
-    for prop in valid:
-        paths = image_map.get(prop.id, [])
-        if paths:
-            try:
-                img_emb = await provider.embed_images(paths)
-                image_embeddings.append(img_emb)
-            except Exception:
-                logger.warning("Failed to embed images for %s", prop.id, exc_info=True)
-                image_embeddings.append(None)
-        else:
-            image_embeddings.append(None)
-
-    # Build points with named vectors
-    logger.info("Building Qdrant points with named vectors")
+    # Build text points (1 per property)
     points: list[PointStruct] = []
-    for prop, text_emb, img_emb in zip(valid, text_embeddings, image_embeddings):
+    for prop, text_emb in zip(valid, text_embeddings):
         point_id = _id_to_uuid(prop.id)
-        vectors: dict[str, list[float]] = {"text": text_emb}
-        if img_emb:
-            vectors["image"] = img_emb
+        payload = prop.to_qdrant_payload()
+        payload["point_type"] = "text"
         points.append(
             PointStruct(
                 id=point_id,
-                vector=vectors,
-                payload=prop.to_qdrant_payload(),
+                vector={"text": text_emb},
+                payload=payload,
             )
         )
+
+    # Generate image embeddings individually (1 vector per image, no averaging)
+    logger.info("Generating individual image embeddings...")
+    for prop in valid:
+        paths = image_map.get(prop.id, [])
+        if not paths:
+            continue
+        try:
+            image_vectors = await provider.embed_images_individually(paths)
+        except Exception:
+            logger.warning("Failed to embed images for %s", prop.id, exc_info=True)
+            continue
+
+        for img_idx, (img_path, img_vec) in enumerate(zip(paths, image_vectors)):
+            img_point_id = _id_to_uuid(f"{prop.id}_img_{img_idx}")
+            payload = prop.to_qdrant_payload()
+            payload["point_type"] = "image"
+            payload["image_index"] = img_idx
+            payload["image_url"] = prop.pictures[img_idx] if img_idx < len(prop.pictures) else None
+            points.append(
+                PointStruct(
+                    id=img_point_id,
+                    vector={"image": img_vec},
+                    payload=payload,
+                )
+            )
+
+    text_count = sum(1 for p in points if p.payload.get("point_type") == "text")
+    image_count = len(points) - text_count
+    logger.info(
+        "Built %d points (%d text + %d image) for %d properties",
+        len(points), text_count, image_count, len(valid),
+    )
 
     logger.info("Upserting %d points into %s", len(points), MULTIMODAL_COLLECTION)
     total = await qdrant_manager.upsert_points(MULTIMODAL_COLLECTION, points)

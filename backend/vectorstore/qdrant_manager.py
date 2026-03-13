@@ -126,6 +126,7 @@ class QdrantManager:
             "condition": PayloadSchemaType.KEYWORD,
             "currency": PayloadSchemaType.KEYWORD,
             "parking_lot": PayloadSchemaType.INTEGER,
+            "point_type": PayloadSchemaType.KEYWORD,
             "address": TextIndexParams(
                 type="text",
                 tokenizer=TokenizerType.MULTILINGUAL,

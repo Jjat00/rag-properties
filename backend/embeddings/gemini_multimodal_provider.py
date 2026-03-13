@@ -50,11 +50,8 @@ class GeminiMultimodalProvider:
         )
         return embeddings[0]
 
-    def _embed_images_sync(self, image_paths: list[Path]) -> list[float]:
-        """Read images from disk and create a single aggregated embedding.
-
-        Sends up to 6 images in one request. Returns the embedding of the combined content.
-        """
+    def _embed_images_individually_sync(self, image_paths: list[Path]) -> list[list[float]]:
+        """Embed each image individually. Returns one vector per image (no averaging)."""
         paths = image_paths[:_MAX_IMAGES_PER_REQUEST]
         parts: list[types.Part] = []
         for path in paths:
@@ -68,20 +65,14 @@ class GeminiMultimodalProvider:
             contents=parts,
             config={"task_type": "RETRIEVAL_DOCUMENT"},
         )
-        # Average the per-image embeddings into one vector
-        vectors = [list(e.values) for e in result.embeddings]
-        if len(vectors) == 1:
-            return vectors[0]
-        dim = len(vectors[0])
-        avg = [sum(v[d] for v in vectors) / len(vectors) for d in range(dim)]
-        return avg
+        return [list(e.values) for e in result.embeddings]
 
-    async def embed_images(self, image_paths: list[Path]) -> list[float]:
-        """Generate aggregated image embedding (up to 6 images -> 1 vector)."""
+    async def embed_images_individually(self, image_paths: list[Path]) -> list[list[float]]:
+        """Embed each image individually. Returns list of vectors (one per image)."""
         if not image_paths:
             return []
         return await asyncio.to_thread(
-            partial(self._embed_images_sync, image_paths)
+            partial(self._embed_images_individually_sync, image_paths)
         )
 
     def _embed_image_query_sync(self, image_bytes: bytes, mime_type: str) -> list[float]:

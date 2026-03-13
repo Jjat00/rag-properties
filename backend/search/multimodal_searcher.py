@@ -1,4 +1,8 @@
-"""Multimodal semantic search with Qdrant prefetch + RRF fusion."""
+"""Multimodal semantic search with Qdrant prefetch + RRF fusion.
+
+Uses multi-point indexing (1 text point + N image points per property).
+Results are deduplicated by property_id, keeping the best score.
+"""
 
 import logging
 import time
@@ -25,6 +29,8 @@ class MultimodalPropertyResult(BaseModel):
     """A single property from multimodal search."""
 
     score: float
+    matched_point_type: str = "text"  # "text" or "image" — which point scored best
+    matched_image_url: str | None = None  # which specific image matched (if image point)
     id: str | None = None
     firebase_id: str | None = None
     title: str | None = None
@@ -64,7 +70,7 @@ class MultimodalSearchMetrics(BaseModel):
 
 class MultimodalSearchResult(BaseModel):
     query: str
-    search_mode: str = "text"  # "text" | "image" | "hybrid"
+    search_mode: str = "text"  # "text" | "image"
     results: list[MultimodalPropertyResult]
     total: int
     metrics: MultimodalSearchMetrics = MultimodalSearchMetrics()
@@ -116,6 +122,8 @@ def _format_point(point: object) -> MultimodalPropertyResult:
     payload = getattr(point, "payload", None) or {}
     return MultimodalPropertyResult(
         score=getattr(point, "score", 0.0),
+        matched_point_type=payload.get("point_type", "text"),
+        matched_image_url=payload.get("image_url"),
         id=payload.get("id"),
         firebase_id=payload.get("firebase_id"),
         title=payload.get("title"),
@@ -147,8 +155,29 @@ def _format_point(point: object) -> MultimodalPropertyResult:
     )
 
 
+def _deduplicate_by_property(
+    results: list[MultimodalPropertyResult],
+) -> list[MultimodalPropertyResult]:
+    """Group results by property ID, keep the one with the best score.
+
+    Multiple points (text + N images) for the same property may appear
+    in the search results. We keep only the highest-scoring point per property.
+    """
+    best: dict[str, MultimodalPropertyResult] = {}
+    for r in results:
+        prop_id = r.id or ""
+        if prop_id not in best or r.score > best[prop_id].score:
+            best[prop_id] = r
+    # Re-sort by score descending
+    deduped = sorted(best.values(), key=lambda r: r.score, reverse=True)
+    return deduped
+
+
 class MultimodalSearcher:
-    """Multimodal search using Qdrant prefetch + RRF fusion over named vectors."""
+    """Multimodal search using Qdrant prefetch + RRF fusion over named vectors.
+
+    Results are deduplicated by property_id (best score wins).
+    """
 
     def __init__(
         self,
@@ -193,8 +222,8 @@ class MultimodalSearcher:
         query_vector = await self._provider.embed_query(query)
         embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
-        # Prefetch from both named vectors + RRF fusion
-        prefetch_limit = k * 2
+        # Fetch more than top_k to account for deduplication
+        fetch_limit = k * 4
         search_start = time.perf_counter()
 
         results = await self._client.query_points(
@@ -204,30 +233,38 @@ class MultimodalSearcher:
                     query=query_vector,
                     using="text",
                     filter=qdrant_filter,
-                    limit=prefetch_limit,
+                    limit=fetch_limit,
                 ),
                 Prefetch(
                     query=query_vector,
                     using="image",
                     filter=qdrant_filter,
-                    limit=prefetch_limit,
+                    limit=fetch_limit,
                 ),
             ],
             query=FusionQuery(fusion=Fusion.RRF),
-            limit=k,
+            limit=fetch_limit,
             with_payload=True,
         )
 
         search_time_ms = (time.perf_counter() - search_start) * 1000
 
-        # Get total candidates
+        # Deduplicate: group by property_id, keep best score
+        all_results = [_format_point(p) for p in results.points]
+        deduped = _deduplicate_by_property(all_results)
+        properties = deduped[:k]
+
+        # Count unique properties (text points only for accurate count)
+        count_filter_conditions = list(qdrant_filter.must) if qdrant_filter and qdrant_filter.must else []
+        count_filter_conditions.append(
+            FieldCondition(key="point_type", match=MatchValue(value="text"))
+        )
         count_result = await self._client.count(
             collection_name=MULTIMODAL_COLLECTION,
-            count_filter=qdrant_filter,
+            count_filter=Filter(must=count_filter_conditions),
             exact=True,
         )
 
-        properties = [_format_point(p) for p in results.points]
         total_time_ms = (time.perf_counter() - total_start) * 1000
 
         return MultimodalSearchResult(
@@ -253,6 +290,7 @@ class MultimodalSearcher:
 
         Embeds the image as RETRIEVAL_QUERY and searches against both
         text and image named vectors using RRF fusion.
+        Results are deduplicated by property_id.
         """
         total_start = time.perf_counter()
         k = top_k or self._top_k
@@ -262,8 +300,8 @@ class MultimodalSearcher:
         query_vector = await self._provider.embed_image_query(image_bytes, mime_type)
         embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
-        # Prefetch from both named vectors + RRF fusion
-        prefetch_limit = k * 2
+        # Fetch more to account for deduplication
+        fetch_limit = k * 4
         search_start = time.perf_counter()
 
         results = await self._client.query_points(
@@ -272,27 +310,34 @@ class MultimodalSearcher:
                 Prefetch(
                     query=query_vector,
                     using="text",
-                    limit=prefetch_limit,
+                    limit=fetch_limit,
                 ),
                 Prefetch(
                     query=query_vector,
                     using="image",
-                    limit=prefetch_limit,
+                    limit=fetch_limit,
                 ),
             ],
             query=FusionQuery(fusion=Fusion.RRF),
-            limit=k,
+            limit=fetch_limit,
             with_payload=True,
         )
 
         search_time_ms = (time.perf_counter() - search_start) * 1000
 
+        # Deduplicate by property_id
+        all_results = [_format_point(p) for p in results.points]
+        deduped = _deduplicate_by_property(all_results)
+        properties = deduped[:k]
+
         count_result = await self._client.count(
             collection_name=MULTIMODAL_COLLECTION,
+            count_filter=Filter(must=[
+                FieldCondition(key="point_type", match=MatchValue(value="text"))
+            ]),
             exact=True,
         )
 
-        properties = [_format_point(p) for p in results.points]
         total_time_ms = (time.perf_counter() - total_start) * 1000
 
         return MultimodalSearchResult(
