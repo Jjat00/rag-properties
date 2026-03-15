@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "fa51843cda87fc738f819c937cc697691255684d27d598dbc64a3a121e480064"
     },
+    "gemini-embedding-2": {
+      "source": "Jjat00/jjat-skills",
+      "sourceType": "github",
+      "computedHash": "b4e4a5ddf5e6de89b828cdec782bd9805647591e1d742e57589feeba3388c1c9"
+    },
     "google-adk-python": {
       "source": "cnemri/google-genai-skills",
       "sourceType": "github",

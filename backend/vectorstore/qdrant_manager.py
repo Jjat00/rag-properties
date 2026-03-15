@@ -11,7 +11,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from config import COLLECTION_NAMES, EMBEDDING_DIMENSIONS, EmbeddingModel
+from config import COLLECTION_NAMES, EMBEDDING_DIMENSIONS, MULTIMODAL_COLLECTION, MULTIMODAL_DIMENSIONS, EmbeddingModel
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +89,80 @@ class QdrantManager:
                 field_schema=schema_type,
             )
 
+    async def ensure_multimodal_collection(self) -> None:
+        """Create the multimodal collection with a single vector.
+
+        All modalities (text + images) share the same 3072d vector space
+        from gemini-embedding-2, so a single vector config suffices.
+        """
+        if not await self._client.collection_exists(MULTIMODAL_COLLECTION):
+            await self._client.create_collection(
+                collection_name=MULTIMODAL_COLLECTION,
+                vectors_config=VectorParams(
+                    size=MULTIMODAL_DIMENSIONS,
+                    distance=Distance.COSINE,
+                ),
+            )
+
+        multimodal_indexes: dict[str, PayloadSchemaType | TextIndexParams] = {
+            "city": PayloadSchemaType.KEYWORD,
+            "state": PayloadSchemaType.KEYWORD,
+            "suburb": TextIndexParams(
+                type="text",
+                tokenizer=TokenizerType.MULTILINGUAL,
+                min_token_len=2,
+                max_token_len=20,
+            ),
+            "house_type": PayloadSchemaType.KEYWORD,
+            "operation": PayloadSchemaType.KEYWORD,
+            "bedroom": PayloadSchemaType.INTEGER,
+            "bathroom": PayloadSchemaType.INTEGER,
+            "half_bathroom": PayloadSchemaType.INTEGER,
+            "price": PayloadSchemaType.FLOAT,
+            "construction_area": PayloadSchemaType.FLOAT,
+            "land_area": PayloadSchemaType.FLOAT,
+            "condition": PayloadSchemaType.KEYWORD,
+            "currency": PayloadSchemaType.KEYWORD,
+            "parking_lot": PayloadSchemaType.INTEGER,
+            "street": TextIndexParams(
+                type="text",
+                tokenizer=TokenizerType.MULTILINGUAL,
+                min_token_len=2,
+                max_token_len=30,
+            ),
+            "address": TextIndexParams(
+                type="text",
+                tokenizer=TokenizerType.MULTILINGUAL,
+                min_token_len=2,
+                max_token_len=30,
+            ),
+            "title": TextIndexParams(
+                type="text",
+                tokenizer=TokenizerType.MULTILINGUAL,
+                min_token_len=2,
+                max_token_len=30,
+            ),
+        }
+
+        for field_name, schema_type in multimodal_indexes.items():
+            await self._client.create_payload_index(
+                collection_name=MULTIMODAL_COLLECTION,
+                field_name=field_name,
+                field_schema=schema_type,
+            )
+
     async def ensure_all_collections(self) -> None:
         for model in EmbeddingModel:
             await self.ensure_collection(model)
 
     async def collection_info(self, model: EmbeddingModel) -> dict[str, object]:
         collection_name = COLLECTION_NAMES[model]
+        return await self._get_collection_info(collection_name)
+
+    async def multimodal_collection_info(self) -> dict[str, object]:
+        return await self._get_collection_info(MULTIMODAL_COLLECTION)
+
+    async def _get_collection_info(self, collection_name: str) -> dict[str, object]:
         try:
             info = await self._client.get_collection(collection_name)
             return {

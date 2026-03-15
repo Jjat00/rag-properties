@@ -29,6 +29,11 @@ Agent: [refina búsqueda] → "3 casas en ese rango..."
 ### Playground
 Búsqueda single-shot con analytics (distribución de scores, gráfica de similitud, comparación de modelos A/B).
 
+### Multimodal
+Búsqueda semántica con imágenes usando `gemini-embedding-2-preview`. Cada propiedad tiene un **embedding fusionado** (texto + hasta 6 imágenes) en un único espacio vectorial de 3072d. Soporta dos modos:
+- **Búsqueda por texto**: el query se embeddea y se busca por cosine similarity directa contra embeddings fusionados
+- **Búsqueda por imagen**: sube una foto y encuentra propiedades visualmente similares (cross-modal search)
+
 ## Cómo funciona
 
 ```
@@ -76,9 +81,10 @@ rag-properties/
 ├── backend/
 │   ├── pyproject.toml              # Dependencias (uv)
 │   ├── config.py                   # Settings, enum de modelos, dimensiones
-│   ├── main.py                     # FastAPI app + endpoints (search, chat SSE)
+│   ├── main.py                     # FastAPI app + endpoints (search, chat SSE, multimodal)
 │   ├── models/
-│   │   └── property.py             # Modelo Pydantic de propiedad
+│   │   ├── property.py             # Modelo Pydantic de propiedad (Excel)
+│   │   └── multimodal_property.py  # Modelo Pydantic de propiedad multimodal (JSON)
 │   ├── agent/                      # Agente conversacional (LangGraph)
 │   │   ├── state.py                # AgentState (MessagesState + campos de búsqueda)
 │   │   ├── prompt.py               # System prompt del agente
@@ -89,37 +95,46 @@ rag-properties/
 │   │   ├── base.py                 # Clase abstracta EmbeddingProvider
 │   │   ├── openai_provider.py      # OpenAI text-embedding-3-small/large
 │   │   ├── gemini_provider.py      # Gemini gemini-embedding-001
+│   │   ├── gemini_multimodal_provider.py # Gemini embedding-2-preview (texto + imágenes)
 │   │   └── registry.py             # Registry con cache de providers
 │   ├── vectorstore/
 │   │   └── qdrant_manager.py       # Gestión de colecciones e indexes
 │   ├── ingestion/
 │   │   ├── location_normalizer.py  # Diccionario de aliases MX
 │   │   ├── excel_loader.py         # Leer Excel → lista de Property
-│   │   └── indexer.py              # Generar embeddings e indexar en Qdrant
+│   │   ├── indexer.py              # Generar embeddings e indexar en Qdrant
+│   │   ├── json_loader.py          # Leer JSON (MongoDB export) → MultimodalProperty
+│   │   ├── image_downloader.py     # Descargar imágenes de propiedades a disco
+│   │   └── multimodal_indexer.py   # Indexar con embeddings fusionados (texto + imagen)
 │   └── search/
 │       ├── query_parser.py         # LLM structured output → ParsedQuery
-│       └── searcher.py             # Búsqueda semántica con filtros
-├── frontend/                       # React 19 + Vite + Shadcn (Chat + Playground)
+│       ├── searcher.py             # Búsqueda semántica con filtros
+│       └── multimodal_searcher.py  # Búsqueda multimodal con cosine similarity
+├── frontend/                       # React 19 + Vite + Shadcn (Chat + Playground + Multimodal)
 │   └── src/
 │       ├── components/
 │       │   ├── chat/               # Vista Chat (split-screen)
-│       │   │   ├── chat-view.tsx   # Layout 60/40 (chat + propiedades)
-│       │   │   ├── chat-panel.tsx  # Lista de mensajes + input
-│       │   │   ├── chat-input.tsx  # Textarea + enviar
-│       │   │   ├── chat-message.tsx # Burbujas con markdown
-│       │   │   └── properties-panel.tsx # Panel derecho con resultados
 │       │   ├── search/             # Barra de búsqueda (playground)
 │       │   ├── results/            # Cards de propiedades (compartido)
-│       │   └── analytics/          # Gráficas de similitud (playground)
+│       │   ├── analytics/          # Gráficas de similitud (playground)
+│       │   └── multimodal/         # Vista Multimodal (texto + imagen)
+│       │       ├── multimodal-view.tsx          # Layout principal
+│       │       ├── multimodal-search-bar.tsx    # Búsqueda texto + upload imagen
+│       │       ├── multimodal-property-card.tsx # Card con carousel de imágenes
+│       │       └── multimodal-results-grid.tsx  # Grid de resultados
 │       ├── hooks/
-│       │   ├── use-chat.ts         # Estado del chat + streaming
-│       │   └── use-search.ts       # Estado de búsqueda (playground)
+│       │   ├── use-chat.ts                 # Estado del chat + streaming
+│       │   ├── use-search.ts               # Estado de búsqueda (playground)
+│       │   └── use-multimodal-search.ts    # Estado de búsqueda multimodal
 │       ├── lib/
 │       │   ├── chat-api.ts         # SSE stream parser con callbacks
-│       │   └── api.ts              # API client REST
+│       │   ├── api.ts              # API client REST
+│       │   └── multimodal-api.ts   # API client para /multimodal/*
 │       └── types/
 │           └── api.ts              # Tipos compartidos
-├── data/                           # Excel de propiedades
+├── data/
+│   ├── properties.xlsx             # Excel fuente de datos (8,803 propiedades)
+│   └── properties.json             # JSON fuente multimodal (MongoDB export)
 └── plan.md                         # Plan detallado y decisiones de arquitectura
 ```
 
@@ -158,11 +173,36 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-### 4. Indexar propiedades
+### 4. Indexar propiedades (texto)
 
 ```bash
 # Con el backend corriendo:
 curl -X POST "http://localhost:8000/ingest?model=gemini"
+```
+
+### 5. Indexar propiedades multimodales (texto + imágenes)
+
+```bash
+# Requiere data/properties.json (MongoDB JSON export)
+
+# Opción A: todo en un paso (descarga imágenes + indexa)
+curl -X POST http://localhost:8000/multimodal/ingest
+
+# Opción B: paso a paso
+# 1. Descargar imágenes a data/images/
+curl http://localhost:8000/multimodal/download-images
+# 2. Indexar (genera embeddings de texto e imagen, upsert en Qdrant)
+curl -X POST http://localhost:8000/multimodal/ingest
+```
+
+Esto crea la colección `properties_multimodal` en Qdrant con un solo vector (3072d cosine).
+Cada propiedad genera UN embedding fusionado que combina texto + hasta 6 imágenes en el
+mismo espacio vectorial de `gemini-embedding-2-preview`.
+
+### 6. Verificar indexación
+
+```bash
+curl http://localhost:8000/health/qdrant | python3 -m json.tool
 ```
 
 ## Variables de entorno
@@ -192,14 +232,40 @@ CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/health` | Health check del servidor |
-| GET | `/health/qdrant` | Estado de las 3 colecciones en Qdrant |
+| GET | `/health/qdrant` | Estado de todas las colecciones en Qdrant |
 | GET | `/models` | Lista de modelos de embedding soportados |
 | POST | `/ingest` | Indexar propiedades del Excel en Qdrant |
 | POST | `/search` | Búsqueda single-shot en lenguaje natural |
 | POST | `/chat` | Chat conversacional via SSE streaming |
 | GET | `/chat/{id}/history` | Historial de una sesión de chat |
 | DELETE | `/chat/{id}` | Borrar sesión de chat |
+| GET | `/multimodal/download-images` | Descargar imágenes de propiedades a disco |
+| POST | `/multimodal/ingest` | Indexar propiedades multimodales (JSON + imágenes) |
+| POST | `/multimodal/search` | Búsqueda multimodal por texto (cosine similarity) |
+| POST | `/multimodal/search-by-image` | Búsqueda por imagen (cross-modal) |
 | GET | `/docs` | Swagger UI |
+
+### POST `/multimodal/search` (Búsqueda por texto multimodal)
+
+```json
+{
+  "query": "departamento con alberca y roof garden",
+  "top_k": 10,
+  "city": "Guadalajara"
+}
+```
+
+Embeddea el texto con `gemini-embedding-2-preview` y busca por cosine similarity directa contra embeddings fusionados (texto + imágenes).
+
+### POST `/multimodal/search-by-image` (Búsqueda por imagen)
+
+```bash
+curl -X POST http://localhost:8000/multimodal/search-by-image \
+  -F "file=@foto_departamento.jpg" \
+  -F "top_k=10"
+```
+
+Acepta JPEG, PNG o WebP (max 10MB). Embeddea la imagen como `RETRIEVAL_QUERY` y busca por cosine similarity directa contra embeddings fusionados. Encuentra propiedades visualmente similares a la imagen subida.
 
 ### POST `/search` (Playground)
 
@@ -233,13 +299,19 @@ Retorna SSE stream con eventos: `session`, `token`, `tool_start`, `results`, `fi
 
 ## Modelos
 
-### Embeddings (intercambiables)
+### Embeddings texto (intercambiables)
 
 | Modelo | Dimensiones | Colección Qdrant | Costo | Default |
 |--------|------------|------------------|-------|---------|
 | `gemini` | 3072 | `properties_gemini` | $0.15/M tokens | **Sí** |
 | `openai-small` | 1536 | `properties_openai_small` | $0.02/M tokens | No |
 | `openai-large` | 3072 | `properties_openai_large` | $0.13/M tokens | No |
+
+### Embeddings multimodal
+
+| Modelo | Dimensiones | Colección Qdrant | Capacidad |
+|--------|------------|------------------|-----------|
+| `gemini-embedding-2-preview` | 3072 | `properties_multimodal` | Texto + imágenes (cross-modal) |
 
 ### LLMs
 
@@ -322,5 +394,6 @@ Ver [plan.md](plan.md) para el detalle completo de decisiones y justificaciones.
 - [x] **Fase 3** — Búsqueda: query parsing con Gemini 3 Flash + filtros unified must + desambiguación automática
 - [x] **Fase 4** — Frontend playground: React 19 + Vite + Shadcn/ui con analytics y desambiguación clickeable
 - [x] **Fase 4.5** — Chat conversacional: agente LangGraph ReAct + Gemini 3 Flash + SSE streaming + UI split-screen
+- [x] **Fase 4.6** — Búsqueda multimodal: Gemini Embedding 2 (texto + imagen), embeddings fusionados, cosine similarity, búsqueda por imagen
 - [ ] **Fase 5** — Mejoras: sparse BM25 + RRF, reranking, paginación, quantization
 - [x] **Fase 6** — Deploy: Railway (backend) + Vercel (frontend) + Qdrant Cloud

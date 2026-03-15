@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import BaseModel
@@ -19,9 +19,14 @@ from config import (
     EmbeddingModel,
     settings,
 )
+from embeddings.gemini_multimodal_provider import GeminiMultimodalProvider
 from embeddings.registry import EmbeddingRegistry
 from ingestion.excel_loader import load_properties
+from ingestion.image_downloader import download_property_images
 from ingestion.indexer import index_properties
+from ingestion.json_loader import load_multimodal_properties
+from ingestion.multimodal_indexer import index_multimodal_properties
+from search.multimodal_searcher import MultimodalSearcher, MultimodalSearchResult
 from search.query_parser import QueryParser
 from search.searcher import SearchResult, Searcher
 from vectorstore.qdrant_manager import QdrantManager
@@ -35,11 +40,12 @@ query_parser: QueryParser
 agent_graph: Any
 agent_runtime_config: dict
 session_manager: SessionManager
+multimodal_provider: GeminiMultimodalProvider
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global qdrant_manager, embedding_registry, query_parser, agent_graph, agent_runtime_config, session_manager
+    global qdrant_manager, embedding_registry, query_parser, agent_graph, agent_runtime_config, session_manager, multimodal_provider
 
     qdrant_manager = QdrantManager(
         host=settings.qdrant_host,
@@ -52,6 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_manager = SessionManager()
 
     await qdrant_manager.ensure_all_collections()
+
+    multimodal_provider = GeminiMultimodalProvider(api_key=settings.gemini_api_key)
 
     agent_graph, agent_runtime_config = create_agent(
         settings=settings,
@@ -92,6 +100,7 @@ async def health_qdrant() -> dict[str, object]:
     for model in EmbeddingModel:
         info = await qdrant_manager.collection_info(model)
         collections[model.value] = info
+    collections["multimodal"] = await qdrant_manager.multimodal_collection_info()
     return {"status": "ok", "collections": collections}
 
 
@@ -346,3 +355,128 @@ async def delete_chat(session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "deleted", "session_id": session_id}
+
+
+# ---------------------------------------------------------------------------
+# Multimodal endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/multimodal/download-images")
+async def multimodal_download_images() -> dict[str, object]:
+    """Download images for multimodal properties (run before ingest)."""
+    json_path = Path(settings.multimodal_json_path)
+    if not json_path.exists():
+        raise HTTPException(status_code=404, detail=f"JSON file not found: {json_path}")
+
+    properties = load_multimodal_properties(str(json_path))
+    if not properties:
+        raise HTTPException(status_code=400, detail="No properties loaded from JSON")
+
+    images_dir = Path(settings.images_dir)
+    image_map = await download_property_images(properties, images_dir)
+
+    total_images = sum(len(paths) for paths in image_map.values())
+    props_with_images = sum(1 for paths in image_map.values() if paths)
+
+    return {
+        "total_properties": len(properties),
+        "properties_with_images": props_with_images,
+        "total_images_downloaded": total_images,
+        "images_dir": str(images_dir),
+    }
+
+
+@app.post("/multimodal/ingest")
+async def multimodal_ingest() -> dict[str, object]:
+    """Load JSON, download images, and index multimodal properties into Qdrant."""
+    json_path = Path(settings.multimodal_json_path)
+    if not json_path.exists():
+        raise HTTPException(status_code=404, detail=f"JSON file not found: {json_path}")
+
+    properties = load_multimodal_properties(str(json_path))
+    if not properties:
+        raise HTTPException(status_code=400, detail="No properties loaded from JSON")
+
+    # Download images
+    images_dir = Path(settings.images_dir)
+    image_map = await download_property_images(properties, images_dir)
+
+    # Ensure collection exists
+    await qdrant_manager.ensure_multimodal_collection()
+
+    # Index with text + image embeddings
+    count = await index_multimodal_properties(
+        properties, image_map, multimodal_provider, qdrant_manager
+    )
+
+    return {
+        "collection": "properties_multimodal",
+        "points_indexed": count,
+        "total_properties": len(properties),
+        "properties_with_images": sum(1 for paths in image_map.values() if paths),
+    }
+
+
+class MultimodalSearchRequest(BaseModel):
+    query: str
+    top_k: int = settings.search_top_k
+
+
+@app.post("/multimodal/search")
+async def multimodal_search(request: MultimodalSearchRequest) -> MultimodalSearchResult:
+    """Multimodal semantic search with LLM-parsed filters + fused embeddings.
+
+    Same pipeline as /search: QueryParser extracts filters from natural language,
+    then vector search runs against filtered candidates.
+    """
+    parse_start = time.perf_counter()
+    parsed = await query_parser.parse(request.query)
+    parse_time_ms = (time.perf_counter() - parse_start) * 1000
+
+    searcher = MultimodalSearcher(
+        client=qdrant_manager.client,
+        provider=multimodal_provider,
+        top_k=request.top_k,
+    )
+    return await searcher.search(
+        query=request.query,
+        parsed=parsed,
+        top_k=request.top_k,
+        parse_time_ms=parse_time_ms,
+    )
+
+
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+@app.post("/multimodal/search-by-image")
+async def multimodal_search_by_image(
+    file: UploadFile,
+    top_k: int = settings.search_top_k,
+) -> MultimodalSearchResult:
+    """Search properties by uploading an image (cross-modal search).
+
+    The image is embedded with gemini-embedding-2-preview and searched
+    against fused embeddings using direct cosine similarity.
+    """
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type: {file.content_type}. Use JPEG, PNG, or WebP.",
+        )
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
+
+    searcher = MultimodalSearcher(
+        client=qdrant_manager.client,
+        provider=multimodal_provider,
+        top_k=top_k,
+    )
+    return await searcher.search_by_image(
+        image_bytes=image_bytes,
+        mime_type=file.content_type or "image/jpeg",
+        top_k=top_k,
+    )

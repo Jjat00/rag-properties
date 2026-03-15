@@ -299,9 +299,10 @@ Los filtros keyword de Qdrant son exact-match, así que la normalización es obl
 - `MemorySaver` (LangGraph in-memory checkpointer) por `thread_id` = `session_id`
 - Acumula contexto entre turnos: "terreno en el centro" + "en Quintana Roo" → "terreno en el centro en Quintana Roo"
 
-**Regla clave del agente:**
+**Reglas clave del agente:**
 - El agente NUNCA reformula el query del usuario. Pasa el texto EXACTO al tool `search_properties`.
 - El parser downstream (QueryParser) se encarga de interpretar ubicaciones, abreviaciones, calles, etc.
+- El agente NUNCA ofrece acciones que no puede realizar: fotos, agendar visitas, contactar agentes, emails, WhatsApp. Solo puede buscar y presentar datos del catálogo.
 
 **SSE Events emitidos por `/chat`:**
 
@@ -336,7 +337,7 @@ Query usuario
        - Colonia: conteo desde resultados cuando hay street
        - Tipo: count() por variante cuando hay aliases expandidos
     → Búsqueda vectorial dense con query COMPLETO del usuario
-    → Retorna top-k propiedades + state_results pre-fetched
+    → Retorna top-k propiedades + total real (count Qdrant, no len) + state_results pre-fetched con conteos reales por estado
 ```
 
 **Filtros de texto (street/neighborhoods)**:

@@ -125,3 +125,58 @@ export type ChatEventType =
   | "metrics"
   | "done"
   | "error";
+
+// Multimodal types
+
+export interface MultimodalPropertyResult {
+  score: number;
+  id: string | null;
+  firebase_id: string | null;
+  title: string | null;
+  description: string | null;
+  house_type: string | null;
+  city: string | null;
+  state: string | null;
+  suburb: string | null;
+  address: string | null;
+  bedroom: number | null;
+  bathroom: number | null;
+  half_bathroom: number | null;
+  construction_area: number | null;
+  land_area: number | null;
+  price: number | null;
+  currency: string | null;
+  operation: string | null;
+  condition: string | null;
+  antiquity: string | null;
+  pictures: string[];
+  amenities: string[];
+  exterior_selected: string[];
+  general_selected: string[];
+  near_places: string[];
+  parking_lot: number | null;
+  lat: number | null;
+  lng: number | null;
+  ad_copy: string | null;
+}
+
+export interface MultimodalSearchMetrics {
+  parse_time_ms: number;
+  embed_time_ms: number;
+  search_time_ms: number;
+  total_time_ms: number;
+  total_candidates: number;
+  score_min: number;
+  score_max: number;
+  score_avg: number;
+}
+
+export interface MultimodalSearchResult {
+  query: string;
+  search_mode: "text" | "image";
+  parsed_filters: ParsedQuery | null;
+  filters_applied: boolean;
+  results: MultimodalPropertyResult[];
+  total: number;
+  metrics: MultimodalSearchMetrics;
+}

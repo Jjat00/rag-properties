@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Activity, Search as SearchIcon, BarChart3, GitCompare, RotateCcw, MessageSquare, FlaskConical } from "lucide-react"
+import { Activity, Search as SearchIcon, BarChart3, GitCompare, RotateCcw, MessageSquare, FlaskConical, Images } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -16,11 +16,12 @@ import { ScoreDistribution } from "@/components/analytics/score-distribution"
 import { SimilarityGraph } from "@/components/analytics/similarity-graph"
 import { ModelComparison } from "@/components/analytics/model-comparison"
 import { ChatView } from "@/components/chat/chat-view"
+import { MultimodalView } from "@/components/multimodal/multimodal-view"
 import { useSearch } from "@/hooks/use-search"
 import { useModels } from "@/hooks/use-models"
 import { fetchHealth } from "@/lib/api"
 
-type AppView = "chat" | "playground"
+type AppView = "chat" | "playground" | "multimodal"
 
 function App() {
   const { models, defaultModel } = useModels()
@@ -121,6 +122,17 @@ function App() {
                 <FlaskConical className="h-3.5 w-3.5" />
                 Playground
               </button>
+              <button
+                onClick={() => setView("multimodal")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  view === "multimodal"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Images className="h-3.5 w-3.5" />
+                Multimodal
+              </button>
             </div>
 
             <Badge
@@ -143,6 +155,9 @@ function App() {
         {view === "chat" && (
           <ChatView models={models} defaultModel={defaultModel} />
         )}
+
+        {/* Multimodal view */}
+        {view === "multimodal" && <MultimodalView />}
 
         {/* Playground view */}
         {view === "playground" && (
