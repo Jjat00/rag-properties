@@ -5,14 +5,6 @@ const BASE = "/api"
 export interface MultimodalSearchParams {
   query: string
   top_k?: number
-  city?: string
-  state?: string
-  house_type?: string
-  operation?: string
-  min_bedrooms?: number
-  max_bedrooms?: number
-  min_price?: number
-  max_price?: number
 }
 
 export async function searchMultimodal(
@@ -24,14 +16,6 @@ export async function searchMultimodal(
     body: JSON.stringify({
       query: params.query,
       top_k: params.top_k ?? 10,
-      city: params.city,
-      state: params.state,
-      house_type: params.house_type,
-      operation: params.operation,
-      min_bedrooms: params.min_bedrooms,
-      max_bedrooms: params.max_bedrooms,
-      min_price: params.min_price,
-      max_price: params.max_price,
     }),
   })
   if (!res.ok) {

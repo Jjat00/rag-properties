@@ -421,19 +421,19 @@ async def multimodal_ingest() -> dict[str, object]:
 class MultimodalSearchRequest(BaseModel):
     query: str
     top_k: int = settings.search_top_k
-    city: str | None = None
-    state: str | None = None
-    house_type: str | None = None
-    operation: str | None = None
-    min_bedrooms: int | None = None
-    max_bedrooms: int | None = None
-    min_price: float | None = None
-    max_price: float | None = None
 
 
 @app.post("/multimodal/search")
 async def multimodal_search(request: MultimodalSearchRequest) -> MultimodalSearchResult:
-    """Multimodal semantic search with fused text+image embeddings (cosine similarity)."""
+    """Multimodal semantic search with LLM-parsed filters + fused embeddings.
+
+    Same pipeline as /search: QueryParser extracts filters from natural language,
+    then vector search runs against filtered candidates.
+    """
+    parse_start = time.perf_counter()
+    parsed = await query_parser.parse(request.query)
+    parse_time_ms = (time.perf_counter() - parse_start) * 1000
+
     searcher = MultimodalSearcher(
         client=qdrant_manager.client,
         provider=multimodal_provider,
@@ -441,15 +441,9 @@ async def multimodal_search(request: MultimodalSearchRequest) -> MultimodalSearc
     )
     return await searcher.search(
         query=request.query,
+        parsed=parsed,
         top_k=request.top_k,
-        city=request.city,
-        state=request.state,
-        house_type=request.house_type,
-        operation=request.operation,
-        min_bedrooms=request.min_bedrooms,
-        max_bedrooms=request.max_bedrooms,
-        min_price=request.min_price,
-        max_price=request.max_price,
+        parse_time_ms=parse_time_ms,
     )
 
 

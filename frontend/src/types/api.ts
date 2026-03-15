@@ -161,15 +161,21 @@ export interface MultimodalPropertyResult {
 }
 
 export interface MultimodalSearchMetrics {
+  parse_time_ms: number;
   embed_time_ms: number;
   search_time_ms: number;
   total_time_ms: number;
   total_candidates: number;
+  score_min: number;
+  score_max: number;
+  score_avg: number;
 }
 
 export interface MultimodalSearchResult {
   query: string;
-  search_mode: "text" | "image" | "hybrid";
+  search_mode: "text" | "image";
+  parsed_filters: ParsedQuery | null;
+  filters_applied: boolean;
   results: MultimodalPropertyResult[];
   total: number;
   metrics: MultimodalSearchMetrics;
