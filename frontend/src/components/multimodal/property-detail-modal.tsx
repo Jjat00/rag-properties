@@ -1,7 +1,7 @@
 import { useState } from "react"
 import {
-  MapPin, Bed, Bath, Ruler, Car, Calendar, Shield, DollarSign,
-  Home, X, ChevronLeft, ChevronRight, Maximize2, ArrowLeft,
+  MapPin, Bed, Bath, Ruler, Car, Calendar, Shield,
+  X, ChevronLeft, ChevronRight, Maximize2,
 } from "lucide-react"
 import {
   Dialog,
