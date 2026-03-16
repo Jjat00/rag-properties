@@ -3,6 +3,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://rag-properties-production.up.railway.app/:path*"
+    },
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
     }
   ]
 }
