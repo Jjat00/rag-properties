@@ -1,4 +1,4 @@
-# RAG Properties
+# RAG Properties 🚀
 
 Sistema RAG para búsqueda semántica de propiedades inmobiliarias en México.
 Busca propiedades en lenguaje natural (ej: "casa de 4 habitaciones con 2 baños en Cancún") y retorna las más relevantes del catálogo.
